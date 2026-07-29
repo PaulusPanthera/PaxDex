@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2d6a4f">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="index,follow">
+  <meta property="og:title" content="PaxDex · PokeMMO Field Guide">
+  <meta property="og:description" content="A clean Pokédex and shiny-hunting route planner for PokeMMO.">
+  <meta property="og:type" content="website">
+  <meta name="description" content="PaxDex is a clean PokeMMO Pokédex and shiny hunting route planner.">
+  <title>PaxDex · PokeMMO Field Guide</title>
+  <script>
+    try {
+      const current = JSON.parse(localStorage.getItem("paxdex.settings.v2") || "null");
+      const legacy = JSON.parse(localStorage.getItem("pocketdex.settings.v1") || "null");
+      const theme = current?.theme || legacy?.theme || "light";
+      const resolved = theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : theme;
+      document.documentElement.dataset.theme = resolved === "dark" ? "dark" : "light";
+    } catch {}
+  </script>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="css/styles.css?v=0.9">
+</head>
+<body>
+  <a class="skip-link" href="#app">Skip to content</a>
+  <div class="sky-pixels" aria-hidden="true"></div>
+  <header class="topbar">
+    <a class="brand" href="#home" aria-label="PaxDex home">
+      <span class="pixel-ball" aria-hidden="true"><i></i></span>
+      <span><strong>PAX</strong><em>DEX</em></span>
+    </a>
+    <div class="header-actions">
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#dex" data-nav="dex">Pokédex</a>
+        <a href="#hunter" data-nav="hunter">Shiny Hunter</a>
+        <a href="#routes" data-nav="routes">Routes</a>
+        <a href="#settings" data-nav="settings">Settings</a>
+        <a href="#about" data-nav="about">About</a>
+      </nav>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch color theme" title="Switch color theme">☾</button>
+    </div>
+  </header>
+
+  <main id="app" tabindex="-1">
+    <section class="loading-screen">
+      <div class="pixel-loader" aria-hidden="true"></div>
+      <h1>Opening PaxDex…</h1>
+      <p>Sorting sprites, routes and encounter tables.</p>
+    </section>
+  </main>
+
+  <datalist id="pokemon-list"></datalist>
+  <script type="module" src="js/app.js?v=0.9"></script>
+</body>
+</html>

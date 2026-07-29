@@ -1,0 +1,17 @@
+{
+  "name": "PaxDex · PokeMMO Field Guide",
+  "short_name": "PaxDex",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eef6e7",
+  "theme_color": "#2d6a4f",
+  "description": "A clean PokeMMO Pokédex, shiny hunter and route encounter browser.",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+To update PaxDex later:
+
+1. Export a new PokeMMO Pokédex/moddable-resource dump.
+2. Rename it to dump.zip.
+3. Put it in this input folder.
+4. Double-click UPDATE_FROM_DUMP.bat.
+
+Your browser favorites and settings are not overwritten.

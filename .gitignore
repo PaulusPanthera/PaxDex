@@ -1,0 +1,4 @@
+input/*.zip
+!input/PLACE_DUMP_HERE.txt
+__pycache__/
+*.pyc
