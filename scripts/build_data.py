@@ -22,7 +22,41 @@ TIME_FIELDS = {
 }
 SAFARI_RE = re.compile(r"safari|great marsh", re.I)
 NON_SAFARI_LOCATION_RE = re.compile(r"^safari zone gate$", re.I)
+CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+ASCII_LABEL_START_RE = re.compile(r"[A-Za-z0-9]")
+REGION_LABEL_RE = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
+REGION_ID_NAMES = {0: "Kanto", 1: "Hoenn", 2: "Unova", 3: "Sinnoh", 4: "Johto"}
 
+
+
+
+def clean_decorated_label(value: Any) -> str:
+    """Strip control/icon prefixes that can leak in from custom client strings."""
+    text = CONTROL_CHAR_RE.sub("", str(value or ""))
+    start = ASCII_LABEL_START_RE.search(text)
+    if start:
+        text = text[start.start():]
+    return text.strip()
+
+
+def clean_region_name(value: Any, region_id: Any) -> str:
+    """Normalize decorated region headers back to their plain region name."""
+    text = str(value or "")
+    match = REGION_LABEL_RE.search(text)
+    if match:
+        return match.group(1).title()
+    cleaned = clean_decorated_label(text)
+    if cleaned:
+        return cleaned
+    try:
+        return REGION_ID_NAMES.get(int(region_id), "Unknown")
+    except (TypeError, ValueError):
+        return "Unknown"
+
+
+def load_dump_json(zf: zipfile.ZipFile, member: str) -> Any:
+    """Load a dump JSON file while tolerating literal control characters in strings."""
+    return json.loads(zf.read(member).decode("utf-8"), strict=False)
 
 def is_safari_location(location: str) -> bool:
     """Return True only for locations where Safari battle rules actually apply."""
@@ -145,7 +179,14 @@ def extract_sprites(zf: zipfile.ZipFile, root: Path, max_id: int) -> dict[str, i
             sprite = root / "sprites" / sprite_dir / f"{pid}.png"
             if not icon.exists() and sprite.exists():
                 shutil.copy2(sprite, icon)
-                counts[icon_dir] += 1
+
+    # Report the actual retained coverage. Some update dumps contain data only,
+    # so existing sprites intentionally remain in place.
+    for target_dir in ("icons", "icons-shiny", "normal", "shiny"):
+        counts[target_dir] = sum(
+            1 for pid in range(1, max_id + 1)
+            if (root / "sprites" / target_dir / f"{pid}.png").exists()
+        )
     return dict(counts)
 
 
@@ -187,7 +228,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     safari_rates = json.loads(safari_rates_path.read_text(encoding="utf-8")) if safari_rates_path.exists() else {"johto": {}, "sinnoh": {}}
 
     with zipfile.ZipFile(dump_zip) as zf:
-        monsters_raw = json.loads(zf.read("info/monsters.json"))
+        monsters_raw = load_dump_json(zf, "info/monsters.json")
         monsters_all = {int(m["id"]): m for m in monsters_raw}
         max_id = min(649, max(monsters_all))
         monsters = {pid: monsters_all[pid] for pid in range(1, max_id + 1) if pid in monsters_all}
@@ -248,9 +289,18 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             "expType": mon.get("exp_type_name"),
             "obtainable": bool(mon.get("obtainable", False)),
             "forms": forms,
-            "evolutions": mon.get("evolutions", []),
+            "evolutions": [
+                {
+                    **evo,
+                    **({"item_name": clean_decorated_label(evo.get("item_name"))} if evo.get("item_name") else {}),
+                }
+                for evo in mon.get("evolutions", [])
+            ],
             "evolutionLine": evo_lines.get(pid, [pid]),
-            "heldItems": mon.get("held_items", []),
+            "heldItems": [
+                {**item, "name": clean_decorated_label(item.get("name"))}
+                for item in mon.get("held_items", [])
+            ],
             "moves": moves_by_type,
             "yields": mon.get("yields", {}),
         }
@@ -265,10 +315,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     for pid, mon in monsters.items():
         for loc in mon.get("locations", []):
-            region = str(loc.get("region_name", "Unknown"))
+            region = clean_region_name(loc.get("region_name"), loc.get("region_id"))
             location_id = int(loc.get("location_id", 0) or 0)
             location = str(loc.get("location_name_full") or loc.get("location_name") or "Unknown location")
-            encounter_type = str(loc.get("type", "Unknown"))
+            encounter_type = clean_decorated_label(loc.get("type", "Unknown")) or "Unknown"
             season = str(loc.get("season", "Any") or "Any")
             safari = is_safari_location(location)
             common = {
@@ -658,7 +708,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
-        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts, "source": dump_zip.name, "version": "0.9",
+        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts, "source": dump_zip.name, "version": "0.10",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

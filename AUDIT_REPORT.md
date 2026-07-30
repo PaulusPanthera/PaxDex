@@ -1,65 +1,48 @@
-# PaxDex v0.9 Audit Report
+# PaxDex v0.10 Audit Report
 
-## Changes audited
+## Data refresh
 
-- Route Searcher Season and Time filtering
-- Cascading viable option generation
-- Natural 5% horde inclusion in random encounter methods
-- Lure table composition with preserved natural hordes
-- Sweet Scent extraction as a separate method
-- Per-species encounter-source labels
+- Source: corrected PokeMMO Pokédex `dump.zip`, generated 30 July 2026
+- 649 Pokédex entries
+- 58,370 Pokémon hunt options
+- 12,398 full encounter tables
+- 12,398 Route Searcher rows
+- 649/649 normal sprites, shiny sprites, normal icons and shiny icons retained
+- 27 existing route/method tables changed composition
+- 7 route/method groups changed seasonal or time availability
+- 51 Lure route entries were added and 51 superseded entries were removed, largely reflecting corrected floors/areas
 
-## Automated checks
+## Import hardening
+
+The corrected dump contains display formatting inside several exported strings and literal control characters that are invalid in strict JSON. The builder now:
+
+- loads these dump strings safely without changing numeric encounter data;
+- converts decorated region headers back to Kanto, Hoenn, Unova, Sinnoh and Johto;
+- normalizes the decorated Super Rod label back to `Super Rod`;
+- removes display-icon prefixes from held items and evolution items;
+- verifies that no formatting controls or dump-decoration prefixes reach the generated website data.
+
+## Validation results
 
 - JavaScript syntax: passed
-- Python builder/validator compilation: passed
-- Generated data validation: passed
-- 649 Pokédex entries
-- 58,397 Pokémon hunt options
-- 12,418 encounter tables and route-search rows
-- Every generated encounter split totals 100% of Pokémon shown
-- Every natural-horde table contains an explicit horde source
-- Bulbasaur lure-exclusive encounter roll = 5%
-- Route 229 Sweet Scent 40/30/30 regression: passed
-- Route 229 Singles includes the natural horde contribution: passed
-- Route 229 Lure Singles preserves the natural horde contribution: passed
-- Default 5×/3× Horde speeds remain 1,200/720 per hour
+- Python builder and validator compilation: passed
+- Generated-data validation: passed
+- Every Pokémon detail, hunt, encounter-table and Route Searcher reference resolves
+- Every method, share, season, time and confidence value is valid
+- Safari Zone Gate remains Headbutt and never receives Safari catch/flee adjustment
+- Bulbasaur Lure-exclusive encounter roll remains 5%
+- Route 229 Autumn Night 5× Horde remains Ariados 40%, Volbeat 30%, Illumise 30%
+- Natural horde blocks remain included in Singles and Lure Singles and separately extractable for Sweet Scent
+- Route 32 Lure remains 95% scaled base outcomes plus 5% Lure-exclusive outcome
+- Default 5×/3× Horde speeds remain 1,200/720 Pokémon per hour
+- Generated JSON contains no leaked control characters or decorated dump labels
 
-## Encounter-model interpretation
+## UI scope
 
-- The dump's normal 95% block and hidden 5% horde block form the complete no-Lure random encounter table.
-- Natural horde contributions are weighted by their 3× or 5× Pokémon count when calculating target encounters/hour.
-- A Lure table uses 95% of that complete random table plus a 5% lure-exclusive encounter roll.
-- Sweet Scent independently normalizes the extracted horde block to 100%.
+No user-interface or scoring logic changed in v0.10. This release updates source data and hardens future dump imports. The v0.9 responsive and GitHub Pages deployment structure is unchanged.
 
 ## Declared limitations
 
 - Multiple Lure-exclusive species still divide the 5% Lure roll equally.
-- Kanto and Hoenn Safari hunts have no matched catch/flee estimates from the linked source.
+- Kanto and Hoenn Safari hunts have no matched catch/flee estimates from the linked community source.
 - Settings and favorites remain device/browser-local.
-- Browser execution smoke testing was unavailable in the build environment because local-network pages are blocked by browser policy; syntax, generated-data and structural checks passed.
-
-
-## v0.8 clarification audit
-
-- No-Lure outcomes remain a complete 100% table, including natural hordes.
-- The 5% Lure model scales the complete base table to 95% and adds the exclusive slot at 5%.
-- Encounter-roll chance and Pokémon-shown share are now displayed independently.
-- Route 32 Summer Morning Lure regression verifies 95% non-Lure outcomes, 5% Totodile, and 1.095 Pokémon shown per roll.
-
-## v0.9 final release audit
-- Safari Zone Gate is classified as Headbutt and never as Safari.
-- No Safari catch/flee estimate is attached to Safari Zone Gate encounters.
-- Generated route, hunt, compact-index and full-split data agree.
-- Python validation, JavaScript syntax, static asset requests and responsive Chromium smoke checks passed.
-
-## Final v0.9 publish gate
-
-- Safari Zone Gate: 6/6 generated tables classified as **Headbutt**.
-- Safari flag: false for every Safari Zone Gate table, route row and Pokémon hunt entry.
-- Safari catch/flee estimates: none attached to Safari Zone Gate.
-- 1,304 generated JSON files parsed successfully.
-- 649 compact Pokédex method lists cross-checked against their detailed hunt files.
-- All production assets returned HTTP 200 from the local static server.
-- Relative asset paths and hash routing remain compatible with GitHub Pages project subdirectories.
-- No localhost dependency exists in production HTML, CSS or JavaScript.

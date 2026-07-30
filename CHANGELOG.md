@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.10 · Corrected dump refresh
+
+- Rebuilt PaxDex from the corrected PokeMMO Pokédex dump dated 30 July 2026.
+- Updated 27 existing encounter-table compositions and 7 season/time availability groups.
+- Applied corrected Lure locations and floor/area assignments from the dump.
+- Updated generated totals to 58,370 hunt options and 12,398 full encounter tables.
+- Added relaxed JSON loading for literal control characters emitted inside some dump strings.
+- Normalized decorated region headers, Super Rod labels, held-item names and evolution-item names.
+- Made data-only updates retain and accurately report all 649 normal, shiny and compact sprites.
+- Re-ran all encounter-model, Lure, Sweet Scent, Safari and Safari Zone Gate regressions.
+
+## v0.9
+- Corrected **Safari Zone Gate**: it is an ordinary Johto location and no longer uses Safari methods, catch adjustments, or flee-rate estimates.
+- Its encounter tables are now correctly exposed as **Headbutt** tables.
+- Added a permanent data-validation regression test for this location.
+- Completed final deployment smoke and GitHub Pages audit.
+
 ## v0.8
 
 - Separated encounter-roll probability from the share of individual Pokémon shown.
@@ -59,9 +76,3 @@
 - Expanded data validation and made GitHub deployment depend on passing checks.
 - Restricted the deployed Pages artifact to production files only.
 - Added an unofficial fan-project disclaimer.
-
-## v0.9
-- Corrected **Safari Zone Gate**: it is an ordinary Johto location and no longer uses Safari methods, catch adjustments, or flee-rate estimates.
-- Its encounter tables are now correctly exposed as **Headbutt** tables.
-- Added a permanent data-validation regression test for this location.
-- Completed final deployment smoke and GitHub Pages audit.

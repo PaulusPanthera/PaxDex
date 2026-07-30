@@ -1,5 +1,5 @@
-PAXDEX v0.9 · ENCOUNTER TABLE CLARITY RELEASE
-=================================================
+PAXDEX v0.10 · POKÉDEX DUMP DATA REFRESH
+=========================================
 
 A small, clean, 8-bit PokeMMO Pokédex and shiny-hunting route planner.
 
@@ -13,15 +13,14 @@ GITHUB PAGES
 The site uses hash routes, relative paths and no server-side code, so it works from both
 an account Pages domain and a repository subdirectory.
 
-NEW IN v0.9
------------
-- Safari Zone Gate is correctly treated as a normal Headbutt location, not as Safari.
-- Full encounter splits now show encounter-roll probability and Pokémon-shown share as separate values.
-- No-Lure tables explicitly show that all outcomes, including natural hordes, total 100%.
-- The 5% Lure model explicitly scales every existing outcome to 95% before inserting the 5% Lure-exclusive outcome.
-- Sweet Scent tables distinguish the raw 5% Dex block from the normalized 100% Sweet Scent method table.
-- Method-speed settings are now consistently described as individual Pokémon shown per hour.
-- Added a Route 32 Lure regression covering the 95% + 5% transformation and natural 3× hordes.
+NEW IN v0.10
+------------
+- Regenerated every Pokédex, hunt, route and encounter-table file from the 30 July 2026 corrected dump.
+- Updated Sweet Scent compositions, seasonal/time availability and corrected Lure locations/floors from the new source.
+- The updater now safely accepts dump files containing literal control characters or decorative client-string prefixes.
+- Region labels, Super Rod labels, held-item names and evolution-item names are normalized before publication.
+- Data-only dumps keep the existing sprite library and report its actual retained coverage.
+- All v0.9 encounter-model and Safari Zone Gate regression checks remain active.
 
 LOCAL TESTING
 -------------

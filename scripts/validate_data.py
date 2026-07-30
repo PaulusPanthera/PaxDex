@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VALID_SEASONS = {"Any", "Spring", "Summer", "Autumn", "Winter"}
 VALID_TIMES = {"Morning", "Day", "Night"}
+VALID_REGIONS = {"Kanto", "Hoenn", "Unova", "Sinnoh", "Johto"}
+VALID_ENCOUNTER_TYPES = {"Grass", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
 REQUIRED_HUNT_KEYS = {
     "region", "location", "encounterType", "method", "share", "minLevel",
     "maxLevel", "confidence", "note", "availability", "tableId"
@@ -24,6 +26,15 @@ def find_option(pid: int, *, location: str, method: str, season: str, time: str)
         if any(a["season"] == season and a["time"] == time for a in opt["availability"]):
             return opt
     return None
+
+
+
+def has_invalid_dump_decoration(value: object) -> bool:
+    text = str(value or "")
+    if any(ord(char) < 32 or ord(char) == 127 for char in text):
+        return True
+    first_ascii = next((index for index, char in enumerate(text) if char.isascii() and char.isalnum()), None)
+    return first_ascii not in (None, 0)
 
 
 def main() -> int:
@@ -48,6 +59,9 @@ def main() -> int:
         errors.append("Pokédex index is not sorted by Pokémon ID.")
     if int(build_info.get("pokemon", -1)) != len(index):
         errors.append(f"build-info Pokémon count is {build_info.get('pokemon')}, index contains {len(index)}.")
+    for sprite_kind in ("icons", "icons-shiny", "normal", "shiny"):
+        if int(build_info.get("sprites", {}).get(sprite_kind, -1)) != len(index):
+            errors.append(f"build-info {sprite_kind} sprite count is {build_info.get('sprites', {}).get(sprite_kind)}, expected {len(index)}.")
 
     method_ids = {m["id"] for m in methods}
     method_defaults = {m["id"]: float(m.get("defaultEph", 0)) for m in methods}
@@ -59,6 +73,10 @@ def main() -> int:
     if int(build_info.get("encounterTables", -1)) != len(encounter_tables):
         errors.append(f"build-info table count is {build_info.get('encounterTables')}, generated table file contains {len(encounter_tables)}.")
     for table_id, table in encounter_tables.items():
+        if table.get("region") not in VALID_REGIONS:
+            errors.append(f"Encounter table {table_id} has invalid region {table.get('region')!r}.")
+        if table.get("encounterType") not in VALID_ENCOUNTER_TYPES:
+            errors.append(f"Encounter table {table_id} has invalid encounter type {table.get('encounterType')!r}.")
         components = table.get("components", [])
         if not components:
             errors.append(f"Encounter table {table_id} has no components.")
@@ -128,6 +146,12 @@ def main() -> int:
             errors.append(f"Detail ID mismatch for #{pid}.")
         if len(detail.get("types", [])) != len(set(detail.get("types", []))):
             errors.append(f"Duplicate display types remain for #{pid} {p.get('name', '')}.")
+        for item in detail.get("heldItems", []):
+            if has_invalid_dump_decoration(item.get("name")):
+                errors.append(f"Decorated or invalid held-item label remains for #{pid}: {item.get('name')!r}.")
+        for evolution in detail.get("evolutions", []):
+            if evolution.get("item_name") and has_invalid_dump_decoration(evolution.get("item_name")):
+                errors.append(f"Decorated or invalid evolution-item label remains for #{pid}: {evolution.get('item_name')!r}.")
         listed_methods = p.get("methods", [])
         if len(listed_methods) != len(set(listed_methods)):
             errors.append(f"Duplicate hunt methods remain in the compact index for #{pid}.")
@@ -194,6 +218,10 @@ def main() -> int:
             errors.append(f"Route index row {n} references missing table {row.get('tableId')!r}.")
         if not row.get("region") or not row.get("location") or not row.get("method"):
             errors.append(f"Route index row {n} is missing region, location or method.")
+        if row.get("region") not in VALID_REGIONS:
+            errors.append(f"Route index row {n} has invalid region {row.get('region')!r}.")
+        if row.get("encounterType") not in VALID_ENCOUNTER_TYPES:
+            errors.append(f"Route index row {n} has invalid encounter type {row.get('encounterType')!r}.")
         if not row.get("availability"):
             errors.append(f"Route index row {n} has no availability data.")
     if int(build_info.get("routeTables", -1)) != len(route_index):
@@ -276,7 +304,8 @@ def main() -> int:
     print("VALIDATION PASSED")
     print(f"- {len(index)} Pokédex entries and {hunt_count:,} hunt options loaded")
     print("- All Pokémon detail, hunt and sprite files are present")
-    print("- All methods, shares, seasons, times, table references and confidence values are valid")
+    print("- All regions, encounter labels, methods, shares, seasons, times, table references and confidence values are valid")
+    print("- No control characters or decorated dump prefixes leaked into published labels")
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")
