@@ -16,6 +16,7 @@ const state = {
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
   hunterSelectedId: null,
+  hunterPickerOutsideHandler: null,
 };
 
 const STORAGE = {
@@ -337,24 +338,57 @@ function normalizedHunterSelection(id, mode = settings().hunterTargetMode) {
   if (!pokemon) return null;
   return normalizedTargetMode(mode) === "line" ? evolutionRootId(pokemon) : pokemon.id;
 }
-function hunterPickerMatches(query, mode) {
-  const pool = hunterPickerPool(mode);
+function pickerCandidateMembers(pokemon, mode) {
+  if (normalizedTargetMode(mode) !== "line") return [pokemon];
+  return (pokemon.evolutionLine || [pokemon.id]).map(id => state.pokemonById.get(Number(id))).filter(Boolean);
+}
+function pickerMatchScore(pokemon, query, mode) {
   const q = String(query || "").trim().toLowerCase();
-  if (!q) {
-    const priority = [...favorites(), ...recent()].map(id => normalizedHunterSelection(id, mode));
-    const ordered = [...new Set(priority)].map(id => state.pokemonById.get(id)).filter(p => p && pool.some(candidate => candidate.id === p.id));
-    return [...ordered, ...pool.filter(p => !ordered.some(item => item.id === p.id))].slice(0, 10);
-  }
   const number = q.replace(/^#/, "");
-  return pool
-    .filter(p => p.name.toLowerCase().includes(q) || String(p.id).includes(number))
-    .sort((a, b) => {
-      const aName = a.name.toLowerCase(); const bName = b.name.toLowerCase();
-      const aScore = aName === q ? 0 : aName.startsWith(q) ? 1 : String(a.id) === number ? 0 : 2;
-      const bScore = bName === q ? 0 : bName.startsWith(q) ? 1 : String(b.id) === number ? 0 : 2;
-      return aScore - bScore || a.id - b.id;
-    })
-    .slice(0, 12);
+  let best = null;
+  pickerCandidateMembers(pokemon, mode).forEach(member => {
+    const name = member.name.toLowerCase();
+    let score = Infinity;
+    if (String(member.id) === number || name === q) score = 0;
+    else if (name.startsWith(q) || String(member.id).startsWith(number)) score = 1;
+    else if (name.split(/[^a-z0-9]+/).some(part => part.startsWith(q))) score = 2;
+    else if (name.includes(q) || String(member.id).includes(number)) score = 3;
+    if (!best || score < best.score || (score === best.score && member.id < best.member.id)) best = { score, member };
+  });
+  return best && Number.isFinite(best.score) ? best : null;
+}
+function hunterPickerSearchResults(query, mode) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return [];
+  return hunterPickerPool(mode)
+    .map(pokemon => ({ pokemon, match: pickerMatchScore(pokemon, q, mode) }))
+    .filter(result => result.match)
+    .sort((a, b) => a.match.score - b.match.score || a.pokemon.id - b.pokemon.id)
+    .slice(0, 18);
+}
+function hunterPickerGroups(query, mode) {
+  const q = String(query || "").trim();
+  if (q) return [{ label: "Search results", items: hunterPickerSearchResults(q, mode) }];
+
+  const pool = hunterPickerPool(mode).slice().sort((a, b) => a.id - b.id);
+  const poolIds = new Set(pool.map(p => p.id));
+  const used = new Set();
+  const normalizeIds = ids => [...new Set(ids.map(id => normalizedHunterSelection(id, mode)).filter(id => id && poolIds.has(id)))];
+  const favoriteIds = normalizeIds([...favorites()]);
+  const recentIds = normalizeIds(recent()).filter(id => !favoriteIds.includes(id));
+  const toItems = ids => ids.map(id => ({ pokemon: state.pokemonById.get(id), match: null })).filter(item => item.pokemon);
+  const groups = [];
+  if (favoriteIds.length) {
+    const items = toItems(favoriteIds.slice(0, 5)); items.forEach(item => used.add(item.pokemon.id));
+    groups.push({ label: "Favorites", items });
+  }
+  if (recentIds.length) {
+    const items = toItems(recentIds.slice(0, 5)); items.forEach(item => used.add(item.pokemon.id));
+    groups.push({ label: "Recently viewed", items });
+  }
+  const browse = pool.filter(p => !used.has(p.id)).slice(0, 12).map(pokemon => ({ pokemon, match: null }));
+  groups.push({ label: normalizedTargetMode(mode) === "line" ? "Evolution lines · Pokédex order" : "Pokédex order", items: browse });
+  return groups;
 }
 function hunterPickerMarkup(selected, mode) {
   const lineMode = normalizedTargetMode(mode) === "line";
@@ -376,59 +410,122 @@ function bindHunterPicker(mode) {
   const input = $("#hunter-pokemon-input");
   const results = $("#hunter-picker-results");
   const form = $("#hunter-search");
-  if (!input || !results || !form) return;
+  const picker = $("#hunter-picker");
+  if (!input || !results || !form || !picker) return;
+  let activeIndex = -1;
+
+  const closeResults = () => {
+    results.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    activeIndex = -1;
+  };
+  const optionButtons = () => $$('[data-picker-pokemon]', results);
+  const setActive = index => {
+    const buttons = optionButtons();
+    if (!buttons.length) return;
+    activeIndex = (index + buttons.length) % buttons.length;
+    buttons.forEach((button, i) => {
+      const active = i === activeIndex;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    const active = buttons[activeIndex];
+    input.setAttribute("aria-activedescendant", active.id);
+    active.scrollIntoView({ block: "nearest" });
+  };
+  const choose = id => {
+    state.hunterSelectedId = normalizedHunterSelection(Number(id), mode);
+    renderHunter();
+  };
   const renderMatches = () => {
-    const matches = hunterPickerMatches(input.value, mode);
-    results.innerHTML = matches.length ? matches.map(p => {
-      const lineCount = (p.evolutionLine || [p.id]).length;
-      return `<button class="pokemon-picker-option" type="button" role="option" data-picker-pokemon="${p.id}">
-        ${imageTag(p.id, p.name, { icon:true })}
-        <span><strong>${escapeHtml(p.name)}</strong><small>#${String(p.id).padStart(3,"0")} · ${normalizedTargetMode(mode) === "line" ? `${lineCount} ${lineCount === 1 ? "form" : "forms"}` : generationLabel(p.id)}</small></span>
-        <span class="picker-types">${typeBadges(p.types)}</span>
-      </button>`;
-    }).join("") : '<div class="picker-empty">No wild Pokémon found.</div>';
+    const groups = hunterPickerGroups(input.value, mode);
+    const itemCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+    let optionIndex = 0;
+    results.innerHTML = itemCount ? groups.map(group => `<section class="picker-result-group" aria-label="${escapeHtml(group.label)}">
+      <div class="picker-result-heading">${escapeHtml(group.label)}</div>
+      ${group.items.map(({ pokemon:p, match }) => {
+        const lineCount = (p.evolutionLine || [p.id]).length;
+        const matchedEvolution = normalizedTargetMode(mode) === "line" && match?.member && match.member.id !== p.id ? ` · matches ${escapeHtml(match.member.name)}` : "";
+        const id = `hunter-picker-option-${optionIndex++}`;
+        return `<button id="${id}" class="pokemon-picker-option" type="button" role="option" aria-selected="false" data-picker-pokemon="${p.id}">
+          ${imageTag(p.id, p.name, { icon:true })}
+          <span><strong>${escapeHtml(p.name)}</strong><small>#${String(p.id).padStart(3,"0")} · ${normalizedTargetMode(mode) === "line" ? `${lineCount} ${lineCount === 1 ? "form" : "forms"}${matchedEvolution}` : generationLabel(p.id)}</small></span>
+          <span class="picker-types">${typeBadges(p.types)}</span>
+        </button>`;
+      }).join("")}
+    </section>`).join("") : '<div class="picker-empty">No wild Pokémon found.</div>';
     results.hidden = false;
     input.setAttribute("aria-expanded", "true");
-    $$('[data-picker-pokemon]', results).forEach(button => button.addEventListener('mousedown', event => {
-      event.preventDefault();
-      state.hunterSelectedId = normalizedHunterSelection(Number(button.dataset.pickerPokemon), mode);
-      renderHunter();
-    }));
+    activeIndex = -1;
   };
+
   input.addEventListener("focus", () => { if (state.hunterSelectedId) input.select(); renderMatches(); });
   input.addEventListener("input", () => {
-    const exact = findPokemon(input.value, hunterPickerPool(mode));
-    state.hunterSelectedId = exact && exact.name.toLowerCase() === input.value.trim().toLowerCase() ? normalizedHunterSelection(exact.id, mode) : null;
+    const exact = hunterPickerSearchResults(input.value, mode).find(result => result.match.score === 0);
+    state.hunterSelectedId = exact ? exact.pokemon.id : null;
     form.querySelector('button[type="submit"]').disabled = !state.hunterSelectedId;
     renderMatches();
   });
   input.addEventListener("keydown", event => {
-    if (event.key === "Escape") { results.hidden = true; input.setAttribute("aria-expanded", "false"); input.blur(); }
+    if (event.key === "Escape") { closeResults(); input.blur(); return; }
+    if (event.key === "ArrowDown") { event.preventDefault(); if (results.hidden) renderMatches(); setActive(activeIndex + 1); return; }
+    if (event.key === "ArrowUp") { event.preventDefault(); if (results.hidden) renderMatches(); setActive(activeIndex - 1); return; }
+    if (event.key === "Enter" && !results.hidden && activeIndex >= 0) {
+      event.preventDefault();
+      choose(optionButtons()[activeIndex].dataset.pickerPokemon);
+      return;
+    }
     if (event.key === "Enter" && !state.hunterSelectedId) {
-      const first = hunterPickerMatches(input.value, mode)[0];
-      if (first) { event.preventDefault(); state.hunterSelectedId = normalizedHunterSelection(first.id, mode); renderHunter(); }
+      const first = hunterPickerSearchResults(input.value, mode)[0]?.pokemon || hunterPickerGroups(input.value, mode).flatMap(group => group.items)[0]?.pokemon;
+      if (first) { event.preventDefault(); choose(first.id); }
     }
   });
-  input.addEventListener("blur", () => setTimeout(() => { results.hidden = true; input.setAttribute("aria-expanded", "false"); }, 120));
+  results.addEventListener("click", event => {
+    const button = event.target.closest("[data-picker-pokemon]");
+    if (button) choose(button.dataset.pickerPokemon);
+  });
+  results.addEventListener("mousemove", event => {
+    const button = event.target.closest("[data-picker-pokemon]");
+    if (!button) return;
+    const index = optionButtons().indexOf(button);
+    if (index >= 0 && index !== activeIndex) setActive(index);
+  });
+  picker.addEventListener("focusout", () => setTimeout(() => {
+    if (!picker.contains(document.activeElement) && !results.matches(":hover")) closeResults();
+  }, 0));
+
+  if (state.hunterPickerOutsideHandler) document.removeEventListener("pointerdown", state.hunterPickerOutsideHandler);
+  state.hunterPickerOutsideHandler = event => {
+    const currentPicker = $("#hunter-picker");
+    if (currentPicker && !currentPicker.contains(event.target)) closeResults();
+  };
+  document.addEventListener("pointerdown", state.hunterPickerOutsideHandler);
+
   $("#hunter-picker-clear")?.addEventListener("click", () => { state.hunterSelectedId = null; renderHunter(); });
   form.addEventListener("submit", event => {
     event.preventDefault();
-    const chosen = state.hunterSelectedId || normalizedHunterSelection(findPokemon(input.value, hunterPickerPool(mode))?.id, mode);
+    const chosen = state.hunterSelectedId || hunterPickerSearchResults(input.value, mode)[0]?.pokemon.id;
     if (chosen) go(`hunter/${chosen}`); else toast("Choose a Pokémon first");
   });
 }
 
+function orderedMethods(methods = []) {
+  const order = new Map(state.methods.map((method, index) => [method.id, index]));
+  return [...new Set(methods.filter(Boolean))].sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b));
+}
 function pokemonCard(p, { shiny = settings().shinySprites, target = "pokemon" } = {}) {
   const fav = favorites().has(p.id);
-  const methods = (p.methods || []).slice(0, 2);
-  const extraMethods = Math.max(0, (p.methods || []).length - methods.length);
+  const allMethods = orderedMethods(p.methods || []);
+  const methods = allMethods.slice(0, 2);
+  const extraMethods = Math.max(0, allMethods.length - methods.length);
   return `<article class="pokemon-card ${typeThemeClass(p.types)}" data-pokemon-id="${p.id}">
     <a class="pokemon-card-link" href="#${target}/${p.id}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
     <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span></div>
     <button class="favorite-star ${fav ? "on" : ""}" type="button" data-favorite="${p.id}" aria-label="${fav ? "Remove" : "Add"} ${escapeHtml(p.name)} ${fav ? "from" : "to"} favorites">★</button>
     <div class="sprite-box">${imageTag(p.id, p.name, { shiny, icon: true })}</div>
     <div class="pokemon-card-copy"><h3>${escapeHtml(p.name)}</h3><div class="type-row">${typeBadges(p.types)}</div></div>
-    <div class="pokemon-card-foot">${methods.length ? methods.map(method => `<span>${escapeHtml(method)}</span>`).join("") + (extraMethods ? `<span>+${extraMethods}</span>` : "") : '<span>No wild route</span>'}</div>
+    <div class="pokemon-card-foot" ${allMethods.length ? `title="${escapeHtml(allMethods.join(", "))}" aria-label="Wild methods: ${escapeHtml(allMethods.join(", "))}"` : ""}>${methods.length ? methods.map(method => `<span>${escapeHtml(method)}</span>`).join("") + (extraMethods ? `<span>+${extraMethods}</span>` : "") : '<span>No wild route</span>'}</div>
   </article>`;
 }
 
@@ -571,6 +668,10 @@ async function renderPokemon(id) {
           <div class="fact"><span>Weight</span><strong>${detail.weightKg} kg</strong></div>
           <div class="fact"><span>Catch rate</span><strong>${detail.catchRate ?? "—"}</strong></div>
           <div class="fact"><span>Growth</span><strong>${escapeHtml(detail.expType || "—")}</strong></div>
+        </div>
+        <div class="detail-method-summary">
+          <div><span>Wild encounter methods</span><small>${orderedMethods(p.methods || []).length ? "Available methods in the current Pokédex dump." : "No wild encounter method is listed."}</small></div>
+          <div class="method-chip-list">${orderedMethods(p.methods || []).length ? orderedMethods(p.methods || []).map(method => `<span class="method-chip">${escapeHtml(method)}</span>`).join("") : '<span class="method-chip muted">Not obtainable in the wild</span>'}</div>
         </div>
       </div>
     </div>

@@ -747,7 +747,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.13",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.14",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

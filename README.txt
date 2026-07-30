@@ -1,4 +1,4 @@
-PAXDEX v0.13 · PICKER AND POKEDEX POLISH
+PAXDEX v0.14 · PICKER RELIABILITY AND DETAIL POLISH
 ==========================================
 
 A compact, route-first PokeMMO Pokédex and shiny-hunting planner.
@@ -10,7 +10,7 @@ GITHUB PAGES
 3. Commit and push to main in GitHub Desktop.
 4. The included workflow validates the generated data and deploys the production site.
 
-NEW IN v0.13
+NEW IN v0.14
 ------------
 - Added a visual Pokémon picker with sprites, types and Pokédex numbers.
 - Selected targets persist while changing season, time or target scope.

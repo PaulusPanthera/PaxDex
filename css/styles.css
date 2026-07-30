@@ -1040,7 +1040,7 @@ html[data-theme="dark"] .text-link { color:#8dd8ae; }
 }
 .settings-compact-grid .shiny-settings-card { grid-column:auto; }
 
-/* PaxDex v0.13: persistent hunter picker, richer species cards and compact utilities */
+/* PaxDex v0.14: ordered, scroll-safe hunter picker and clearer detail methods */
 .type-theme-grass { --type-accent:#78b957; --type-soft:#dcefc4; }
 .type-theme-poison { --type-accent:#9b62aa; --type-soft:#ead8ed; }
 .type-theme-fire { --type-accent:#eb7a45; --type-soft:#f9d6bd; }
@@ -1072,15 +1072,21 @@ html[data-theme="dark"] .text-link { color:#8dd8ae; }
 .picker-search-icon { width:38px; display:grid; place-items:center; color:var(--green); font-size:2rem; font-weight:900; }
 .picker-clear { width:34px; height:34px; display:grid; place-items:center; color:var(--ink); background:var(--paper-2); border:2px solid var(--ink); font-size:1.25rem; font-weight:900; cursor:pointer; }
 .pokemon-picker-results {
-  position:absolute; left:0; right:150px; top:66px; z-index:40; max-height:440px; overflow:auto;
+  position:absolute; left:0; right:0; top:66px; z-index:40; max-height:min(460px,calc(100vh - 220px)); overflow:auto;
   padding:8px; background:var(--paper); border:4px solid var(--ink); box-shadow:8px 8px 0 var(--shadow);
+  scrollbar-gutter:stable; overscroll-behavior:contain;
 }
 .pokemon-picker-option {
   width:100%; display:grid; grid-template-columns:52px minmax(0,1fr) auto; align-items:center; gap:12px;
   padding:9px 10px; color:var(--ink); background:transparent; border:0; border-bottom:2px solid rgba(32,51,42,.18); text-align:left; cursor:pointer;
 }
 .pokemon-picker-option:last-child { border-bottom:0; }
-.pokemon-picker-option:hover, .pokemon-picker-option:focus-visible { background:var(--paper-2); outline:2px solid var(--green); outline-offset:-2px; }
+.pokemon-picker-option:hover, .pokemon-picker-option:focus-visible, .pokemon-picker-option.active { background:var(--paper-2); outline:2px solid var(--green); outline-offset:-2px; }
+.picker-result-group + .picker-result-group { margin-top:8px; padding-top:8px; border-top:3px solid color-mix(in srgb,var(--ink) 24%,transparent); }
+.picker-result-heading { padding:7px 10px 5px; color:var(--green); font-size:.68rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+.pokemon-picker-results::-webkit-scrollbar { width:14px; }
+.pokemon-picker-results::-webkit-scrollbar-track { background:var(--paper-2); border-left:2px solid var(--ink); }
+.pokemon-picker-results::-webkit-scrollbar-thumb { background:var(--green); border:3px solid var(--paper-2); }
 .pokemon-picker-option > img { width:48px; height:48px; object-fit:contain; image-rendering:pixelated; }
 .pokemon-picker-option strong, .pokemon-picker-option small { display:block; }
 .pokemon-picker-option small { margin-top:3px; color:var(--muted); font-size:.72rem; }
@@ -1095,6 +1101,16 @@ html[data-theme="dark"] .text-link { color:#8dd8ae; }
 .selected-target-summary > span { grid-row:1/3; color:var(--type-accent); font-size:.7rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
 .selected-target-summary strong { font-size:1rem; }
 .selected-target-summary small { color:var(--muted); }
+.detail-method-summary {
+  margin-top:14px; display:grid; grid-template-columns:minmax(170px,.85fr) minmax(0,1.5fr); gap:14px; align-items:center;
+  padding:12px 13px; background:color-mix(in srgb,var(--type-soft) 62%,var(--paper)); border:2px solid var(--ink);
+}
+.detail-method-summary > div:first-child span, .detail-method-summary > div:first-child small { display:block; }
+.detail-method-summary > div:first-child span { font-weight:900; }
+.detail-method-summary > div:first-child small { margin-top:3px; color:var(--muted); font-size:.72rem; }
+.method-chip-list { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.method-chip { padding:5px 8px; background:var(--paper); border:2px solid var(--ink); font-size:.7rem; font-weight:900; box-shadow:2px 2px 0 color-mix(in srgb,var(--type-accent) 55%,var(--shadow)); }
+.method-chip.muted { color:var(--muted); font-weight:700; }
 
 /* A more expressive Pokédex grid */
 .dex-grid { grid-template-columns:repeat(auto-fill,minmax(182px,1fr)); gap:20px; }
@@ -1164,7 +1180,10 @@ html[data-theme="dark"] .pokemon-card-foot span { color:#eef6f0; background:rgba
 html[data-theme="dark"] .pokemon-picker-input,
 html[data-theme="dark"] .pokemon-picker-results { background:#18261f; border-color:#d6e7db; }
 html[data-theme="dark"] .pokemon-picker-option { color:#eef6f0; border-color:#405348; }
-html[data-theme="dark"] .pokemon-picker-option:hover { background:#263a30; }
+html[data-theme="dark"] .pokemon-picker-option:hover, html[data-theme="dark"] .pokemon-picker-option.active { background:#263a30; }
+html[data-theme="dark"] .picker-result-heading { color:#8bd7ad; }
+html[data-theme="dark"] .detail-method-summary { background:color-mix(in srgb,var(--type-accent) 18%,#1b2a23); border-color:#d6e7db; }
+html[data-theme="dark"] .method-chip { background:#22342b; border-color:#d6e7db; box-shadow:2px 2px 0 #0c1511; }
 html[data-theme="dark"] .picker-clear { color:#eef6f0; background:#263a30; border-color:#d6e7db; }
 html[data-theme="dark"] .item-entry,
 html[data-theme="dark"] .hunt-preview-row,
@@ -1173,8 +1192,10 @@ html[data-theme="dark"] .detail-sprite-card { background:linear-gradient(145deg,
 
 @media (max-width:760px) {
   .pokemon-picker-bar { grid-template-columns:1fr; }
-  .pokemon-picker-results { right:0; top:66px; }
+  .pokemon-picker-results { right:0; top:128px; max-height:min(420px,calc(100vh - 190px)); }
   .selected-target-summary { grid-template-columns:1fr; }
+  .detail-method-summary { grid-template-columns:1fr; }
+  .method-chip-list { justify-content:flex-start; }
   .selected-target-summary > span { grid-row:auto; }
   .dex-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:11px; }
   .pokemon-card { min-height:238px; padding:12px; }

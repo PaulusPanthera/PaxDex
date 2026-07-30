@@ -1,3 +1,12 @@
+# PaxDex v0.14
+
+- Reworked the Shiny Hunter picker into clearly labeled Favorites, Recently viewed and Pokédex-order sections.
+- Search results now use a deterministic exact/prefix/substring order and evolution-line mode can find a line by typing any evolved form.
+- Fixed the picker closing when its scrollbar is clicked or dragged.
+- Added arrow-key navigation and clearer active-result feedback.
+- Added the full list of wild encounter methods to every Pokémon detail page.
+- Added full-method tooltips to compact Pokédex cards.
+
 # PaxDex v0.13
 
 - Replaced the browser datalist with a visual Pokémon picker using sprites, types and Pokédex numbers.
