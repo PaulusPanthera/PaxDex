@@ -1,4 +1,4 @@
-PAXDEX v0.10 · POKÉDEX DUMP DATA REFRESH
+PAXDEX v0.11 · CLEANER HUNT RESULTS
 =========================================
 
 A small, clean, 8-bit PokeMMO Pokédex and shiny-hunting route planner.
@@ -13,14 +13,14 @@ GITHUB PAGES
 The site uses hash routes, relative paths and no server-side code, so it works from both
 an account Pages domain and a repository subdirectory.
 
-NEW IN v0.10
+NEW IN v0.11
 ------------
-- Regenerated every Pokédex, hunt, route and encounter-table file from the 30 July 2026 corrected dump.
-- Updated Sweet Scent compositions, seasonal/time availability and corrected Lure locations/floors from the new source.
-- The updater now safely accepts dump files containing literal control characters or decorative client-string prefixes.
-- Region labels, Super Rod labels, held-item names and evolution-item names are normalized before publication.
-- Data-only dumps keep the existing sprite library and report its actual retained coverage.
-- All v0.9 encounter-model and Safari Zone Gate regression checks remain active.
+- Removed repeated ranking-methodology copy from Shiny Hunter result headers.
+- Compact hunt cards now show only the useful result and confidence information.
+- Full encounter-table explanations are available in a collapsed Calculation notes section.
+- Ranking and Safari methodology now lives on the About page.
+- Shortened Settings, browser-storage and Today's Find explanations.
+- Retains the corrected 30 July 2026 dump data and all v0.10 validation fixes.
 
 LOCAL TESTING
 -------------

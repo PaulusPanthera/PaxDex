@@ -470,7 +470,7 @@ function hunterCard(h, rank) {
     : "";
   return `<article class="hunter-card">
     <div class="hunter-rank">${rank}</div>
-    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span> · <small>${escapeHtml(h.note)}</small></div></div>
+    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div></div>
     <div class="hunt-score"><strong>${formatRate(h.targetEph)}/hr</strong><small>${formatPercent(h.share)} target share<br>${hoursLabel(h.hoursPerShiny)} per ${h.safariAdjusted ? "caught " : ""}target shiny${safariLine}</small></div>
   </article>`;
 }
@@ -546,13 +546,13 @@ async function openEncounterSplit(h, targetId) {
     : table.method.startsWith("Lure")
       ? "The no-Lure encounter table totals 100%, including natural hordes. In this 5% Lure model, every existing outcome is multiplied by 95%, then the Lure-exclusive outcome is inserted at 5%. Pokémon-shown shares weight 3×/5× hordes by their size."
       : "Encounter outcomes total 100%, including natural hordes. Pokémon-shown shares are a second view used for shiny efficiency and weight 3×/5× hordes by their size.";
+  const calculationNotes = `<details class="calculation-notes"><summary>Calculation notes</summary><div><p>${escapeHtml(explanation)}</p><p>${escapeHtml(table.note)}</p>${safariNote}</div></details>`;
   content.innerHTML = `<div class="split-head"><div><span class="eyebrow">Full encounter split</span><h2>${escapeHtml(table.location)}</h2><p><strong>${escapeHtml(table.method)}</strong> · ${escapeHtml(table.region)} · ${escapeHtml(table.encounterType)}</p></div><div class="split-speed"><strong>${formatNumber(speed,0)}/hr</strong><small>Pokémon shown</small></div></div>
     <div class="availability-feature">${availabilityVisual(h.availability)}</div>
     <div class="split-summary"><span>${rawLabel}: ${formatPercent(table.rawTableTotal, table.rawTableTotal < .1 ? 1 : 0)}</span>${isSweetScent ? '<span>Sweet Scent table: 100%</span>' : ''}${shownSummary}<span>${escapeHtml(table.confidence)} confidence</span><span>${table.components.length} species</span></div>
-    <div class="split-explainer"><strong>How to read this:</strong> ${escapeHtml(explanation)}</div>
     ${slowdownLegend}
     <div class="split-list">${rows}</div>
-    <div class="split-note">${escapeHtml(table.note)}</div>${safariNote}`;
+    ${calculationNotes}`;
   $$('a[href^="#pokemon/"]', content).forEach(link => link.addEventListener('click', () => dialog.close()));
 }
 
@@ -648,7 +648,7 @@ async function renderHunter(id = null) {
   const effectiveDenominator = effectiveShinyDenominator(currentSettings);
   $("#app").innerHTML = `<section class="hunter-shell">
     <a class="back-link" href="#hunter">← Choose another Pokémon</a>
-    <div class="hunter-banner">${imageTag(id,p.name,{shiny:true})}<div><span class="eyebrow">Shiny route planner</span><h1>${escapeHtml(p.name)}</h1><p>Ranked by expected ${escapeHtml(p.name)} encounters per hour. Known Johto and Great Marsh Safari catches can be adjusted by their balls-only success estimate.</p></div><a class="pixel-btn secondary" href="#pokemon/${id}">Open Pokédex entry</a></div>
+    <div class="hunter-banner">${imageTag(id,p.name,{shiny:true})}<div><span class="eyebrow">Shiny route planner</span><h1>${escapeHtml(p.name)}</h1></div><a class="pixel-btn secondary" href="#pokemon/${id}">Open Pokédex entry</a></div>
     <div class="toolbar hunter-filters">
       <div class="field"><label>Method</label><select id="hunt-method"><option>All</option>${state.methods.filter(m=>Number(currentSettings.speeds[m.id]||0)>0).map(m=>`<option ${m.id===f.method?"selected":""}>${m.id}</option>`).join("")}</select></div>
       <div class="field"><label>Region</label><select id="hunt-region"><option>All</option>${regions.map(x=>`<option ${x===f.region?"selected":""}>${x}</option>`).join("")}</select></div>
@@ -798,8 +798,7 @@ function renderSettings() {
           </div>
         </div>
         <div class="odds-preview" id="odds-preview"><span>Effective shiny rate</span><strong>≈ 1 / ${Math.round(effective).toLocaleString()}</strong><small>${shinyFormula(s)} = ${formatNumber(effective, effective % 1 ? 1 : 0)}</small></div>
-        <div class="notice">The Hunter ranks locations by target encounters/hour. These boosts change the estimated hours until a target shiny.</div>
-        <label class="toggle-line safari-setting"><input id="adjust-safari-catch" type="checkbox" ${s.adjustSafariCatch ? "checked" : ""}><span><strong>Catch-adjust known Safari hunts</strong><small>Use community balls-only catch estimates for Johto Safari and Sinnoh Great Marsh when ranking expected caught shinies.</small></span></label>
+        <label class="toggle-line safari-setting"><input id="adjust-safari-catch" type="checkbox" ${s.adjustSafariCatch ? "checked" : ""}><span><strong>Catch-adjust known Safari hunts</strong><small>Use available Johto Safari and Great Marsh catch estimates.</small></span></label>
       </article>
       <article class="setting-card hunter-availability-settings">
         <h2>Hunter availability</h2>
@@ -874,8 +873,8 @@ function renderAbout() {
   setPageTitle("About");
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A small browser companion for the PokeMMO Pokédex.</p></div></div>
     <div class="about-grid">
-      <div class="about-column"><article class="setting-card"><h2>Credits</h2><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><div class="notice"><strong>Pokédex source:</strong> dump.zip</div><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a> — community-derived balls-only catch and flee estimates for Johto Safari and Sinnoh Great Marsh.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article><article class="setting-card"><h2>Today's Find</h2><p>Today's Find hashes your local calendar date and uses it to select one obtainable Pokémon. It stays the same for the full local day and changes at midnight. It is a fun daily pick, not a recommendation or activity tracker.</p></article></div>
-      <div class="about-column"><article class="setting-card"><h2>Browser storage</h2><p>Whether PaxDex is hosted on GitHub Pages or opened through a local server, favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p></article><article class="setting-card"><h2>Current data</h2><p>${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} full encounter splits are currently loaded.</p><p>To update a GitHub-hosted copy, rebuild locally with <code>UPDATE_FROM_DUMP.bat</code>, then commit the regenerated <code>data</code> and <code>sprites</code> folders.</p></article></div>
+      <div class="about-column"><article class="setting-card"><h2>Credits</h2><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><div class="notice"><strong>Pokédex source:</strong> dump.zip</div><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a> — community-derived balls-only catch and flee estimates for Johto Safari and Sinnoh Great Marsh.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article><article class="setting-card"><h2>How hunt rankings work</h2><p>Hunts are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts change the estimated time, not the encounter ranking.</p><p>When enabled, known Johto Safari and Great Marsh hunts are adjusted by their estimated chance of catching the shiny. Technical table details remain available under <strong>Calculation notes</strong> in each full encounter split.</p></article></div>
+      <div class="about-column"><article class="setting-card"><h2>Browser storage</h2><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p></article><article class="setting-card"><h2>Today's Find</h2><p>Today's Find uses your local calendar date to select one obtainable Pokémon. It changes at local midnight.</p></article><article class="setting-card"><h2>Current data</h2><p>${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} full encounter splits are currently loaded.</p></article></div>
     </div></section>`;
 }
 

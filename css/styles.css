@@ -947,3 +947,12 @@ html[data-theme="dark"] .split-source-tag.lure { color:#fff0bd; background:#4b3e
 html[data-theme="dark"] .split-explainer { background:#1d3027; }
 html[data-theme="dark"] .split-metrics strong { color:#f2f8f3; }
 @media (max-width:520px) { .split-metrics { grid-template-columns:1fr; } }
+
+/* v0.11: keep technical methodology available without crowding primary pages */
+.calculation-notes { margin-top:14px; border:2px solid var(--green); background:var(--paper-2); }
+.calculation-notes summary { cursor:pointer; padding:10px 12px; font-weight:900; list-style-position:inside; }
+.calculation-notes[open] summary { border-bottom:2px solid var(--green); }
+.calculation-notes > div { padding:10px 12px; font-size:.82rem; line-height:1.5; }
+.calculation-notes p { margin:0 0 8px; }
+.calculation-notes p:last-child { margin-bottom:0; }
+.calculation-notes .split-source { margin-top:10px; }

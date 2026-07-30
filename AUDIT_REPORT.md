@@ -1,4 +1,4 @@
-# PaxDex v0.10 Audit Report
+# PaxDex v0.11 Audit Report
 
 ## Data refresh
 
@@ -39,10 +39,18 @@ The corrected dump contains display formatting inside several exported strings a
 
 ## UI scope
 
-No user-interface or scoring logic changed in v0.10. This release updates source data and hardens future dump imports. The v0.9 responsive and GitHub Pages deployment structure is unchanged.
+The v0.11 cleanup removes repeated methodology from primary result surfaces while preserving it on About and inside optional Calculation notes. No encounter ranking or scoring logic changed.
 
 ## Declared limitations
 
 - Multiple Lure-exclusive species still divide the 5% Lure roll equally.
 - Kanto and Hoenn Safari hunts have no matched catch/flee estimates from the linked community source.
 - Settings and favorites remain device/browser-local.
+
+
+## v0.11 interface cleanup
+
+- Primary Shiny Hunter header contains only the Pokémon identity and Pokédex action.
+- Ranking methodology is documented on About instead of repeated on results.
+- Full split calculation methodology remains accessible through a collapsed disclosure.
+- Compact hunt cards no longer repeat generated technical table notes.

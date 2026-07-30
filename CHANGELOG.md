@@ -1,3 +1,11 @@
+# PaxDex v0.11
+
+- Removed ranking-methodology text from the Shiny Hunter header.
+- Removed generated technical notes from compact hunt cards.
+- Moved hunt-ranking and Safari methodology to the About page.
+- Collapsed encounter-table explanations into optional Calculation notes.
+- Shortened Settings and About copy for a cleaner layout.
+
 # Changelog
 
 ## v0.10 · Corrected dump refresh
