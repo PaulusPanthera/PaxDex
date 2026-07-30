@@ -1,3 +1,12 @@
+# PaxDex v0.15
+
+## Shiny Hunter picker
+
+- Fixed the picker scrollbar ending early.
+- The empty picker now contains the complete eligible Pokédex list instead of only the first 12 browse entries.
+- Exact Form and Evolution Line modes both support scrolling through their complete lists.
+- Added rendering containment to keep the larger list responsive.
+
 # PaxDex v0.14
 
 - Reworked the Shiny Hunter picker into clearly labeled Favorites, Recently viewed and Pokédex-order sections.

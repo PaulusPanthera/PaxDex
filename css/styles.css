@@ -1040,7 +1040,7 @@ html[data-theme="dark"] .text-link { color:#8dd8ae; }
 }
 .settings-compact-grid .shiny-settings-card { grid-column:auto; }
 
-/* PaxDex v0.14: ordered, scroll-safe hunter picker and clearer detail methods */
+/* PaxDex v0.15: complete scrollable hunter picker */
 .type-theme-grass { --type-accent:#78b957; --type-soft:#dcefc4; }
 .type-theme-poison { --type-accent:#9b62aa; --type-soft:#ead8ed; }
 .type-theme-fire { --type-accent:#eb7a45; --type-soft:#f9d6bd; }
@@ -1079,6 +1079,7 @@ html[data-theme="dark"] .text-link { color:#8dd8ae; }
 .pokemon-picker-option {
   width:100%; display:grid; grid-template-columns:52px minmax(0,1fr) auto; align-items:center; gap:12px;
   padding:9px 10px; color:var(--ink); background:transparent; border:0; border-bottom:2px solid rgba(32,51,42,.18); text-align:left; cursor:pointer;
+  content-visibility:auto; contain-intrinsic-size:70px;
 }
 .pokemon-picker-option:last-child { border-bottom:0; }
 .pokemon-picker-option:hover, .pokemon-picker-option:focus-visible, .pokemon-picker-option.active { background:var(--paper-2); outline:2px solid var(--green); outline-offset:-2px; }

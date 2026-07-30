@@ -1,4 +1,4 @@
-PAXDEX v0.14 · PICKER RELIABILITY AND DETAIL POLISH
+PAXDEX v0.15 · COMPLETE PICKER SCROLLING
 ==========================================
 
 A compact, route-first PokeMMO Pokédex and shiny-hunting planner.
@@ -10,7 +10,11 @@ GITHUB PAGES
 3. Commit and push to main in GitHub Desktop.
 4. The included workflow validates the generated data and deploys the production site.
 
-NEW IN v0.14
+NEW IN v0.15
+
+- The empty Shiny Hunter picker now includes every eligible Pokémon or evolution line in Pokédex order.
+- Removed the hidden 12-entry browse cap that made the scrollbar stop early.
+- Added rendering containment so the complete list remains responsive.
 ------------
 - Added a visual Pokémon picker with sprites, types and Pokédex numbers.
 - Selected targets persist while changing season, time or target scope.

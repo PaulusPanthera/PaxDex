@@ -386,7 +386,7 @@ function hunterPickerGroups(query, mode) {
     const items = toItems(recentIds.slice(0, 5)); items.forEach(item => used.add(item.pokemon.id));
     groups.push({ label: "Recently viewed", items });
   }
-  const browse = pool.filter(p => !used.has(p.id)).slice(0, 12).map(pokemon => ({ pokemon, match: null }));
+  const browse = pool.filter(p => !used.has(p.id)).map(pokemon => ({ pokemon, match: null }));
   groups.push({ label: normalizedTargetMode(mode) === "line" ? "Evolution lines · Pokédex order" : "Pokédex order", items: browse });
   return groups;
 }
