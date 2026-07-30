@@ -29,7 +29,7 @@ const LEGACY_STORAGE = {
 };
 
 const defaultSettings = () => ({
-  settingsVersion: 4,
+  settingsVersion: 5,
   baseShinyDenominator: 30000,
   donatorStatus: false,
   shinyCharm: 0,
@@ -41,6 +41,7 @@ const defaultSettings = () => ({
   lockTime: false,
   currentTime: "All",
   adjustSafariCatch: true,
+  hunterTargetMode: "exact",
   speeds: Object.fromEntries(state.methods.map(m => [m.id, m.defaultEph])),
 });
 
@@ -65,7 +66,10 @@ function settings() {
   }
   if (sourceVersion < 4) {
     if (!("adjustSafariCatch" in stored) && !("adjustSafariCatch" in legacy)) merged.adjustSafariCatch = true;
-    merged.settingsVersion = 4;
+  }
+  if (sourceVersion < 5) {
+    if (!("hunterTargetMode" in stored) && !("hunterTargetMode" in legacy)) merged.hunterTargetMode = "exact";
+    merged.settingsVersion = 5;
     if (Object.keys(stored).length || Object.keys(legacy).length) saveJSON(STORAGE.settings, merged);
   }
   return merged;
@@ -207,6 +211,58 @@ async function getHunts(id) {
   if (!state.huntCache.has(id)) state.huntCache.set(id, fetchJSON(`data/hunts/${id}.json`));
   return state.huntCache.get(id);
 }
+function normalizedTargetMode(value) { return value === "line" ? "line" : "exact"; }
+function targetModeControl(current, label = "Target scope") {
+  const mode = normalizedTargetMode(current);
+  return `<div class="target-mode-control" role="group" aria-label="${escapeHtml(label)}">
+    <button type="button" class="target-mode-button ${mode === "exact" ? "active" : ""}" data-target-mode="exact" aria-pressed="${mode === "exact"}">Exact form</button>
+    <button type="button" class="target-mode-button ${mode === "line" ? "active" : ""}" data-target-mode="line" aria-pressed="${mode === "line"}">Evolution line</button>
+  </div>`;
+}
+function addTargetMembers(hunts, pokemon) {
+  return hunts.map(hunt => ({
+    ...hunt,
+    targetMembers: [{ pokemonId: pokemon.id, name: pokemon.name, share: Number(hunt.share || 0), safariCapture: hunt.safariCapture || null }],
+  }));
+}
+function combineEvolutionLineHunts(targetPokemon, huntGroups) {
+  const byTable = new Map();
+  huntGroups.forEach((hunts, index) => {
+    const pokemon = targetPokemon[index];
+    hunts.forEach(hunt => {
+      const key = String(hunt.tableId);
+      if (!byTable.has(key)) {
+        byTable.set(key, { ...hunt, share: 0, safariCapture: null, targetMembers: [] });
+      }
+      const combined = byTable.get(key);
+      combined.share += Number(hunt.share || 0);
+      combined.minLevel = combined.minLevel && hunt.minLevel ? Math.min(combined.minLevel, hunt.minLevel) : (combined.minLevel || hunt.minLevel || 0);
+      combined.maxLevel = Math.max(Number(combined.maxLevel || 0), Number(hunt.maxLevel || 0));
+      combined.targetMembers.push({
+        pokemonId: pokemon.id, name: pokemon.name, share: Number(hunt.share || 0), safariCapture: hunt.safariCapture || null,
+      });
+    });
+  });
+  return [...byTable.values()].map(hunt => ({ ...hunt, share: Math.min(1, hunt.share) }));
+}
+async function loadHunterTarget(id, mode) {
+  const selected = state.pokemonById.get(id);
+  const normalizedMode = normalizedTargetMode(mode);
+  if (!selected) return null;
+  if (normalizedMode === "exact") {
+    return { selected, targetPokemon: [selected], targetIds: [selected.id], hunts: addTargetMembers(await getHunts(selected.id), selected), mode: "exact" };
+  }
+  const detail = await getDetail(selected.id);
+  const targetPokemon = (detail.evolutionLine || [selected.id]).map(pid => state.pokemonById.get(Number(pid))).filter(Boolean);
+  const huntGroups = await Promise.all(targetPokemon.map(mon => getHunts(mon.id)));
+  return { selected, targetPokemon, targetIds: targetPokemon.map(mon => mon.id), hunts: combineEvolutionLineHunts(targetPokemon, huntGroups), mode: "line" };
+}
+function targetMemberBreakdown(hunt, speed, { compact = false } = {}) {
+  const members = (hunt.targetMembers || []).filter(member => Number(member.share || 0) > 0);
+  if (members.length <= 1) return "";
+  const visible = members.map(member => `${escapeHtml(member.name)} ${formatRate(Number(speed || 0) * Number(member.share || 0))}/hr`);
+  return `<div class="target-member-breakdown ${compact ? "compact" : ""}">${visible.join(`<span aria-hidden="true">·</span>`)}</div>`;
+}
 async function getEncounterTables() {
   if (!state.encounterTables) state.encounterTables = await fetchJSON("data/encounter-tables.json");
   return state.encounterTables;
@@ -277,7 +333,7 @@ function renderHome() {
     <div class="hero-copy">
       <span class="eyebrow">A small PokeMMO field guide</span>
       <h1>Find a Pokémon.<br><span>Find its best hunt.</span></h1>
-      <p>A calmer Pokédex for quick answers: clean stats, friendly browsing, and a Shiny Hunter that compares every location, method, season and time.</p>
+      <p>Browse PokeMMO encounter data without digging through the in-game Dex. Compare exact route splits, seasons and methods, then find the fastest hunt for one form or its whole evolution line.</p>
       <form class="search-panel" id="home-search">
         <input name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Search Bulbasaur, Pikachu, #133…" aria-label="Search Pokémon">
         <button class="pixel-btn" type="submit">Open Pokédex</button>
@@ -407,7 +463,7 @@ async function renderPokemon(id) {
         <article class="detail-card"><h2>Moves</h2>${Object.entries(detail.moves).sort(([a],[b])=>a.localeCompare(b)).map(([kind,moves])=>`<details class="move-group"><summary>${escapeHtml(kind)} · ${moves.length}</summary><div class="move-list">${moves.map(m=>`<div class="move"><span>${escapeHtml(m.name)}</span>${m.level!=null?`<small>Lv. ${m.level}</small>`:""}</div>`).join("")}</div></details>`).join("") || '<p>No move data.</p>'}</article>
       </div>
       <aside>
-        <article class="detail-card"><h2>Abilities</h2><div class="chip-list">${detail.abilities.map(a=>`<span class="chip">${escapeHtml(a.name)}</span>`).join("") || '<span class="chip">—</span>'}</div></article>
+        <article class="detail-card"><h2>Abilities</h2><div class="chip-list">${detail.abilities.map(a=>`<span class="chip ${a.hidden ? "hidden-ability-chip" : ""}">${escapeHtml(a.name)}${a.hidden ? " · Hidden" : ""}</span>`).join("") || '<span class="chip">—</span>'}</div></article>
         <article class="detail-card"><h2>Breeding</h2><div class="chip-list">${detail.eggGroups.map(x=>`<span class="chip">${escapeHtml(x)}</span>`).join("") || '<span class="chip">Cannot breed</span>'}</div></article>
         <article class="detail-card"><h2>Wild held items</h2><div class="chip-list">${detail.heldItems.map(x=>`<span class="chip">${escapeHtml(x.name)}</span>`).join("") || '<span class="chip">None listed</span>'}</div></article>
         <article class="detail-card"><h2>Best hunt preview</h2>${ranked.length ? ranked.map((h,i)=>`<div style="padding:10px 0;border-top:2px solid #ded7bc"><strong>${i+1}. ${escapeHtml(h.location)}</strong><br><small>${escapeHtml(h.method)} · ${formatPercent(h.share)} · ${formatRate(h.targetEph)} target encounters/hr</small></div>`).join("") + `<a class="pixel-btn small" style="margin-top:12px" href="#hunter/${id}">Compare all spots</a>` : '<p>No wild encounter listed.</p>'}</article>
@@ -427,12 +483,27 @@ function rankHunts(hunts) {
   const denominator = effectiveShinyDenominator(s);
   return hunts.map(h => {
     const speed = Number(s.speeds[h.method] || 0);
-    const targetEph = speed * h.share;
-    const knownSafariChance = Number(h.safariCapture?.ballsOnlySuccess || 0);
-    const safariAdjusted = Boolean(h.safari && s.adjustSafariCatch && knownSafariChance > 0);
-    const rankingEph = safariAdjusted ? targetEph * knownSafariChance : targetEph;
+    const members = h.targetMembers?.length
+      ? h.targetMembers
+      : [{ pokemonId: null, name: "Target", share: Number(h.share || 0), safariCapture: h.safariCapture || null }];
+    const targetShare = members.reduce((sum, member) => sum + Number(member.share || 0), 0);
+    const targetEph = speed * targetShare;
+    let rankingEph = 0;
+    let adjustedMemberCount = 0;
+    members.forEach(member => {
+      const memberEph = speed * Number(member.share || 0);
+      const catchChance = Number(member.safariCapture?.ballsOnlySuccess || 0);
+      if (h.safari && s.adjustSafariCatch && catchChance > 0) {
+        rankingEph += memberEph * catchChance;
+        adjustedMemberCount += 1;
+      } else {
+        rankingEph += memberEph;
+      }
+    });
+    const safariAdjusted = adjustedMemberCount > 0;
+    const displaySafariSuccess = safariAdjusted && targetEph > 0 ? rankingEph / targetEph : 0;
     return {
-      ...h, speed, targetEph, rankingEph, safariAdjusted,
+      ...h, share: targetShare, speed, targetEph, rankingEph, safariAdjusted, displaySafariSuccess,
       hoursPerShiny: rankingEph > 0 ? denominator / rankingEph : Infinity,
     };
   }).sort((a,b) => b.rankingEph - a.rankingEph || b.targetEph - a.targetEph || b.share - a.share || a.location.localeCompare(b.location));
@@ -462,16 +533,18 @@ function availabilityVisual(items) {
   return `<span class="availability-icons">${seasonHtml}${timeHtml}</span>`;
 }
 
-function hunterCard(h, rank) {
+function hunterCard(h, rank, lineMode = false) {
   const safariLine = h.safari
-    ? h.safariCapture
-      ? `<br><span class="safari-inline">${formatPercent(h.safariCapture.ballsOnlySuccess)} balls-only catch estimate${h.safariAdjusted ? " · applied to ranking" : ""}</span>`
+    ? h.displaySafariSuccess > 0
+      ? `<br><span class="safari-inline">${formatPercent(h.displaySafariSuccess)} weighted balls-only catch estimate${h.safariAdjusted ? " · applied" : ""}</span>`
       : `<br><span class="safari-inline muted-inline">Safari catch estimate unavailable</span>`
     : "";
+  const shareLabel = lineMode ? "evolution-line" : "target";
+  const shinyLabel = lineMode ? "any line" : "target";
   return `<article class="hunter-card">
     <div class="hunter-rank">${rank}</div>
-    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div></div>
-    <div class="hunt-score"><strong>${formatRate(h.targetEph)}/hr</strong><small>${formatPercent(h.share)} target share<br>${hoursLabel(h.hoursPerShiny)} per ${h.safariAdjusted ? "caught " : ""}target shiny${safariLine}</small></div>
+    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div>${targetMemberBreakdown(h, h.speed, { compact:true })}</div>
+    <div class="hunt-score"><strong>${formatRate(h.targetEph)}/hr</strong><small>${formatPercent(h.share)} ${shareLabel} share<br>${hoursLabel(h.hoursPerShiny)} per ${h.safariAdjusted ? "caught " : ""}${shinyLabel} shiny${safariLine}</small></div>
   </article>`;
 }
 
@@ -488,7 +561,7 @@ function encounterDialog() {
   return dialog;
 }
 
-async function openEncounterSplit(h, targetId) {
+async function openEncounterSplit(h, targetIds = []) {
   const dialog = encounterDialog();
   const content = $(".encounter-dialog-content", dialog);
   content.innerHTML = `<div class="loading-screen compact-loading"><div class="pixel-loader"></div><p>Loading encounter split…</p></div>`;
@@ -500,9 +573,9 @@ async function openEncounterSplit(h, targetId) {
     return;
   }
   const speed = Number(settings().speeds[table.method] || 0);
-  const target = state.pokemonById.get(targetId);
+  const targetIdSet = new Set((Array.isArray(targetIds) ? targetIds : targetIds ? [targetIds] : []).map(Number));
   const rows = table.components.map(component => {
-    const isTarget = Number(component.pokemonId) === Number(targetId);
+    const isTarget = targetIdSet.has(Number(component.pokemonId));
     const speciesEph = speed * Number(component.share || 0);
     const slow = component.slowAbilities || [];
     const slowMarker = slow.length ? `<span class="slowdown-marker" title="May add a start-of-battle ability animation/message: ${escapeHtml(slow.join(", "))}"><img src="assets/icons/encounter-slowdown.png" alt="Start-of-battle slowdown warning"><span>${escapeHtml(slow.join(" / "))}</span></span>` : "";
@@ -526,7 +599,7 @@ async function openEncounterSplit(h, targetId) {
     const rollLabel = table.method.includes("Horde") ? "of Sweet Scent rolls" : "of encounter rolls";
     return `<article class="split-species ${isTarget ? "target-species" : ""}">
       <div class="split-sprite">${imageTag(component.pokemonId, component.name, {icon:true})}${slowMarker}</div>
-      <div class="split-species-main"><div class="split-species-title"><a href="#pokemon/${component.pokemonId}">${escapeHtml(component.name)}</a>${isTarget ? '<span class="target-label">Target</span>' : ""}</div>
+      <div class="split-species-main"><div class="split-species-title"><a href="#pokemon/${component.pokemonId}">${escapeHtml(component.name)}</a>${isTarget ? `<span class="target-label">${targetIdSet.size > 1 ? "Target line" : "Target"}</span>` : ""}</div>
         <div class="split-metrics">
           <span><strong>${formatPercent(methodRollChance, 1)}</strong> ${rollLabel} contain ${escapeHtml(component.name)}</span>
           <span><strong>${formatPercent(component.share, 1)}</strong> of all Pokémon shown</span>
@@ -556,29 +629,41 @@ async function openEncounterSplit(h, targetId) {
   $$('a[href^="#pokemon/"]', content).forEach(link => link.addEventListener('click', () => dialog.close()));
 }
 
-function bindEncounterSplitButtons(targetId) {
+function bindEncounterSplitButtons(targetIds) {
   $$('[data-open-hunt]').forEach(button => button.addEventListener('click', () => {
     const hunt = state.activeHuntMap.get(button.dataset.openHunt);
-    if (hunt) openEncounterSplit(hunt, targetId).catch(error => { console.error(error); toast("Could not load the encounter split"); });
+    if (hunt) openEncounterSplit(hunt, targetIds).catch(error => { console.error(error); toast("Could not load the encounter split"); });
   }));
 }
 
 async function renderHunter(id = null) {
   setActiveNav("hunter");
   const s = settings();
+  const targetMode = normalizedTargetMode(s.hunterTargetMode);
   if (s.lockSeason && s.currentSeason !== "All") state.hunterFilters.season = s.currentSeason;
   if (s.lockTime && s.currentTime !== "All") state.hunterFilters.time = s.currentTime;
+
+  const saveTargetMode = mode => {
+    const next = settings();
+    next.settingsVersion = 5;
+    next.hunterTargetMode = normalizedTargetMode(mode);
+    saveJSON(STORAGE.settings, next);
+  };
 
   if (!id) {
     setPageTitle("Shiny Hunter");
     const favMons = [...favorites()].map(x => state.pokemonById.get(x)).filter(Boolean);
     $("#app").innerHTML = `<section>
-      <div class="section-head"><div><span class="eyebrow">Route planner</span><h1 class="page-title">Shiny Hunter</h1><p>Choose a Pokémon and compare its best location, method, season and time.</p></div></div>
+      <div class="section-head"><div><span class="eyebrow">Route planner</span><h1 class="page-title">Shiny Hunter</h1><p>Choose a Pokémon, then compare exact routes or its complete evolution line.</p></div></div>
       <div class="panel hunter-start-panel">
         <form class="search-panel" id="hunter-search">
           <input name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Which Pokémon are you hunting?" aria-label="Select Pokémon">
           <button class="pixel-btn" type="submit">Find hunts</button>
         </form>
+        <div class="hunter-scope-row">
+          <div><strong>What counts as the target?</strong><small>Use one exact form, or combine every wild form in its evolution line.</small></div>
+          ${targetModeControl(targetMode, "Shiny Hunter target scope")}
+        </div>
         <div class="availability-fix-grid">
           <div class="season-fix-card">
             <div><strong>Hunting season</strong><small>Choose your current in-game season.</small></div>
@@ -598,6 +683,7 @@ async function renderHunter(id = null) {
       </div>
     </section>`;
     $("#hunter-search").addEventListener("submit", e => { e.preventDefault(); const p=findPokemon(new FormData(e.currentTarget).get("pokemon")||""); if(p)go(`hunter/${p.id}`);else toast("I couldn't find that Pokémon"); });
+    $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => { saveTargetMode(btn.dataset.targetMode); renderHunter(); }));
     $$('[data-season-choice]').forEach(btn => btn.addEventListener('click', () => {
       state.hunterFilters.season = btn.dataset.seasonChoice;
       const next = settings();
@@ -624,7 +710,14 @@ async function renderHunter(id = null) {
   if (!p) return renderNotFound();
   setPageTitle(`${p.name} Shiny Hunt`);
   $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Checking every route for ${escapeHtml(p.name)}…</p></section>`;
-  const hunts = await getHunts(id);
+  const targetData = await loadHunterTarget(id, targetMode);
+  const hunts = targetData.hunts;
+  const targetPokemon = targetData.targetPokemon;
+  const targetIds = targetData.targetIds;
+  const lineMode = targetMode === "line" && targetPokemon.length > 1;
+  const lineRoot = targetPokemon[0] || p;
+  const targetTitle = lineMode ? `${lineRoot.name} line` : p.name;
+  const expectedShinyLabel = lineMode ? "any line" : "target";
   const regions = [...new Set(hunts.map(h=>h.region))].sort();
   const rankedAll = rankHunts(hunts);
   const f = state.hunterFilters;
@@ -646,10 +739,15 @@ async function renderHunter(id = null) {
   const methodOrder = state.methods.map(m=>m.id).filter(m=>byMethod.has(m));
   const currentSettings = settings();
   const effectiveDenominator = effectiveShinyDenominator(currentSettings);
+  const bannerSprites = lineMode
+    ? `<div class="hunter-family-sprites">${targetPokemon.map(mon => imageTag(mon.id, mon.name, { shiny:true, icon:true, className:"hunter-family-sprite" })).join("")}</div>`
+    : imageTag(id,p.name,{shiny:true});
+  const familyNames = lineMode ? `<p class="hunter-family-names">${targetPokemon.map(mon => escapeHtml(mon.name)).join(" · ")}</p>` : "";
   $("#app").innerHTML = `<section class="hunter-shell">
     <a class="back-link" href="#hunter">← Choose another Pokémon</a>
-    <div class="hunter-banner">${imageTag(id,p.name,{shiny:true})}<div><span class="eyebrow">Shiny route planner</span><h1>${escapeHtml(p.name)}</h1></div><a class="pixel-btn secondary" href="#pokemon/${id}">Open Pokédex entry</a></div>
+    <div class="hunter-banner">${bannerSprites}<div><span class="eyebrow">${lineMode ? "Evolution-line planner" : "Shiny route planner"}</span><h1>${escapeHtml(targetTitle)}</h1>${familyNames}</div><a class="pixel-btn secondary" href="#pokemon/${id}">Open Pokédex entry</a></div>
     <div class="toolbar hunter-filters">
+      <div class="field target-scope-field"><label>Target scope</label>${targetModeControl(targetMode, "Target scope")}</div>
       <div class="field"><label>Method</label><select id="hunt-method"><option>All</option>${state.methods.filter(m=>Number(currentSettings.speeds[m.id]||0)>0).map(m=>`<option ${m.id===f.method?"selected":""}>${m.id}</option>`).join("")}</select></div>
       <div class="field"><label>Region</label><select id="hunt-region"><option>All</option>${regions.map(x=>`<option ${x===f.region?"selected":""}>${x}</option>`).join("")}</select></div>
       <div class="field"><label>Confidence</label><select id="hunt-confidence">${["All","High","Medium","Low"].map(x=>`<option ${x===f.confidence?"selected":""}>${x}</option>`).join("")}</select></div>
@@ -660,10 +758,11 @@ async function renderHunter(id = null) {
         <label class="toggle-line compact"><input id="hunter-lock-time" type="checkbox" ${currentSettings.lockTime ? "checked" : ""}><span>Keep time fixed</span></label>
       </div>
     </div>
-    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span><span class="chip ${confidenceClass(best.confidence)}">${best.confidence} confidence</span></div></div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(p.name)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>Target share</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}target shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.safariCapture ? "Balls-only catch" : "Current shiny rate"}</span><strong>${best.safariCapture ? formatPercent(best.safariCapture.ballsOnlySuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
-    ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1)).join("")}</div></section>`).join("") : ""}
+    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span><span class="chip ${confidenceClass(best.confidence)}">${best.confidence} confidence</span></div>${targetMemberBreakdown(best, best.speed)}</div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(targetTitle)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>${lineMode ? "Evolution-line share" : "Target share"}</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}${expectedShinyLabel} shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.displaySafariSuccess > 0 ? "Weighted catch estimate" : "Current shiny rate"}</span><strong>${best.displaySafariSuccess > 0 ? formatPercent(best.displaySafariSuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
+    ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1,lineMode)).join("")}</div></section>`).join("") : ""}
   </section>`;
   const rerender = () => renderHunter(id);
+  $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => { saveTargetMode(btn.dataset.targetMode); rerender(); }));
   [["#hunt-method","method"],["#hunt-region","region"],["#hunt-confidence","confidence"]].forEach(([sel,key]) => $(sel).addEventListener("change",e=>{state.hunterFilters[key]=e.target.value;rerender();}));
   $$('[data-season-choice]').forEach(btn => btn.addEventListener('click', () => {
     state.hunterFilters.season = btn.dataset.seasonChoice;
@@ -683,7 +782,7 @@ async function renderHunter(id = null) {
   $("#hunter-lock-time").addEventListener("change", e => {
     const next = settings(); next.lockTime = e.target.checked; next.currentTime = state.hunterFilters.time; saveJSON(STORAGE.settings, next); rerender();
   });
-  bindEncounterSplitButtons(id);
+  bindEncounterSplitButtons(targetIds);
 }
 
 function renderFavorites() {
@@ -780,46 +879,38 @@ function renderSettings() {
   const effective = effectiveShinyDenominator(s);
   $("#app").innerHTML = `<section>
     <div class="section-head settings-head">
-      <div><span class="eyebrow">Personal assumptions</span><h1 class="page-title">Settings</h1><p>Adjust shiny odds, display and encounter pace.</p></div>
+      <div><span class="eyebrow">Personal assumptions</span><h1 class="page-title">Settings</h1><p>Set your shiny odds, display and hunting pace.</p></div>
       <div class="settings-top-actions"><button class="pixel-btn secondary" id="save-settings">Save settings</button><button class="pixel-btn ghost" id="reset-settings">Reset defaults</button></div>
     </div>
-    <div class="settings-stack">
-      <div class="settings-columns"><div class="settings-column"><article class="setting-card shiny-settings-card">
-        <h2>Shiny calculation</h2>
-        <div class="setting-row"><div><strong>Base shiny denominator</strong><small>The normal PokeMMO base is 30,000.</small></div><input id="base-shiny-denominator" type="number" min="1" step="1" value="${s.baseShinyDenominator}"></div>
-        <div class="boost-section"><strong>Active boosts</strong><small>Select the boosts active for your hunt. Charm and event options are exclusive within their group.</small>
-          <div class="boost-grid">
-            <label class="check-card"><input id="boost-donator" type="checkbox" ${s.donatorStatus ? "checked" : ""}><span><b>Donator Status</b><small>10% bonus</small></span></label>
-            <label class="check-card"><input class="exclusive-boost" data-group="charm" data-value="0.05" type="checkbox" ${Number(s.shinyCharm)===0.05 ? "checked" : ""}><span><b>Shiny Charm 5%</b><small>Linked charm</small></span></label>
-            <label class="check-card"><input class="exclusive-boost" data-group="charm" data-value="0.10" type="checkbox" ${Number(s.shinyCharm)===0.10 ? "checked" : ""}><span><b>Shiny Charm 10%</b><small>Personal charm</small></span></label>
-            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.05" type="checkbox" ${Number(s.eventBonus)===0.05 ? "checked" : ""}><span><b>Event bonus 5%</b><small>Wild boost</small></span></label>
-            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.10" type="checkbox" ${Number(s.eventBonus)===0.10 ? "checked" : ""}><span><b>Event bonus 10%</b><small>Wild boost</small></span></label>
-            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.15" type="checkbox" ${Number(s.eventBonus)===0.15 ? "checked" : ""}><span><b>Event bonus 15%</b><small>Wild boost</small></span></label>
+    <div class="settings-compact-grid">
+      <article class="setting-card shiny-settings-card">
+        <div class="setting-card-head"><div><h2>Shiny odds</h2><p>Only used for the estimated time until a shiny.</p></div><div class="mini-input"><label for="base-shiny-denominator">Base denominator</label><input id="base-shiny-denominator" type="number" min="1" step="1" value="${s.baseShinyDenominator}"></div></div>
+        <div class="boost-section compact-boost-section"><strong>Active boosts</strong><small>Charm and event bonuses are exclusive within their own group.</small>
+          <div class="boost-grid compact-boost-grid">
+            <label class="check-card"><input id="boost-donator" type="checkbox" ${s.donatorStatus ? "checked" : ""}><span><b>Donator</b><small>10%</small></span></label>
+            <label class="check-card"><input class="exclusive-boost" data-group="charm" data-value="0.05" type="checkbox" ${Number(s.shinyCharm)===0.05 ? "checked" : ""}><span><b>Charm</b><small>5%</small></span></label>
+            <label class="check-card"><input class="exclusive-boost" data-group="charm" data-value="0.10" type="checkbox" ${Number(s.shinyCharm)===0.10 ? "checked" : ""}><span><b>Charm</b><small>10%</small></span></label>
+            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.05" type="checkbox" ${Number(s.eventBonus)===0.05 ? "checked" : ""}><span><b>Event</b><small>5%</small></span></label>
+            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.10" type="checkbox" ${Number(s.eventBonus)===0.10 ? "checked" : ""}><span><b>Event</b><small>10%</small></span></label>
+            <label class="check-card"><input class="exclusive-boost" data-group="event" data-value="0.15" type="checkbox" ${Number(s.eventBonus)===0.15 ? "checked" : ""}><span><b>Event</b><small>15%</small></span></label>
           </div>
         </div>
-        <div class="odds-preview" id="odds-preview"><span>Effective shiny rate</span><strong>≈ 1 / ${Math.round(effective).toLocaleString()}</strong><small>${shinyFormula(s)} = ${formatNumber(effective, effective % 1 ? 1 : 0)}</small></div>
-        <label class="toggle-line safari-setting"><input id="adjust-safari-catch" type="checkbox" ${s.adjustSafariCatch ? "checked" : ""}><span><strong>Catch-adjust known Safari hunts</strong><small>Use available Johto Safari and Great Marsh catch estimates.</small></span></label>
+        <div class="odds-preview compact-odds-preview" id="odds-preview"><span>Effective shiny rate</span><strong>≈ 1 / ${Math.round(effective).toLocaleString()}</strong><small>${shinyFormula(s)} = ${formatNumber(effective, effective % 1 ? 1 : 0)}</small></div>
+        <label class="toggle-line safari-setting"><input id="adjust-safari-catch" type="checkbox" ${s.adjustSafariCatch ? "checked" : ""}><span><strong>Catch-adjust known Safari hunts</strong><small>Johto Safari and Great Marsh only.</small></span></label>
       </article>
-      <article class="setting-card hunter-availability-settings">
-        <h2>Hunter availability</h2>
-        <p>Set the season and time you are currently hunting in.</p>
-        <div class="setting-choice-block"><strong>Season</strong>${iconChoiceGroup("season", ["All","Spring","Summer","Autumn","Winter"], s.currentSeason, "Default hunting season")}<label class="toggle-line"><input id="settings-lock-season" type="checkbox" ${s.lockSeason ? "checked" : ""}><span>Keep this season fixed in Shiny Hunter</span></label></div>
-        <div class="setting-choice-block"><strong>Time of day</strong>${iconChoiceGroup("time", ["All","Morning","Day","Night"], s.currentTime, "Default hunting time")}<label class="toggle-line"><input id="settings-lock-time" type="checkbox" ${s.lockTime ? "checked" : ""}><span>Keep this time fixed in Shiny Hunter</span></label></div>
-      </article></div><div class="settings-column">
-      <article class="setting-card">
+      <article class="setting-card display-settings-card">
         <h2>Display</h2>
-        <div class="setting-row"><div><strong>Color theme</strong><small>Choose light, dark or follow the device.</small></div><select id="theme-mode"><option value="light" ${s.theme==="light"?"selected":""}>Light</option><option value="dark" ${s.theme==="dark"?"selected":""}>Dark</option><option value="system" ${s.theme==="system"?"selected":""}>System</option></select></div>
-        <div class="setting-row"><div><strong>Default sprites</strong><small>Used throughout the Pokédex.</small></div><select id="sprite-mode"><option value="normal" ${!s.shinySprites?"selected":""}>Normal</option><option value="shiny" ${s.shinySprites?"selected":""}>Shiny</option></select></div>
-        <button class="pixel-btn ghost" id="clear-favorites">Clear favorites</button>
+        <div class="setting-row"><div><strong>Color theme</strong><small>Light, dark or device setting.</small></div><select id="theme-mode"><option value="light" ${s.theme==="light"?"selected":""}>Light</option><option value="dark" ${s.theme==="dark"?"selected":""}>Dark</option><option value="system" ${s.theme==="system"?"selected":""}>System</option></select></div>
+        <div class="setting-row"><div><strong>Default sprites</strong><small>Used across the Pokédex.</small></div><select id="sprite-mode"><option value="normal" ${!s.shinySprites?"selected":""}>Normal</option><option value="shiny" ${s.shinySprites?"selected":""}>Shiny</option></select></div>
+        <div class="display-actions"><button class="pixel-btn ghost" id="clear-favorites">Clear favorites</button><a class="text-link" href="#about">Data and calculation notes →</a></div>
       </article>
-      <article class="setting-card compact-data-card"><h2>Data status</h2><div class="notice">${state.buildInfo.pokemon} Pokémon · ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options · ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} complete encounter splits · source: dump.zip.</div><p><strong>Confidence labels:</strong> High means the encounter block is structurally complete. Medium usually means a Lure estimate or an unusual table shape. Low indicates a possibly incomplete or special encounter table.</p></article>
-      </div></div>
-      <article class="setting-card full-settings-card"><h2>Encounters per hour</h2><p class="notice warning">These are planning assumptions, not fixed game values. Horde values count individual Pokémon shown, not battle screens.</p>${state.methods.map(m=>`<div class="setting-row"><div><strong>${escapeHtml(m.label)}</strong><small>Individual Pokémon shown per hour</small></div><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></div>`).join("")}</article>
     </div>
+    <article class="setting-card speed-settings-card">
+      <div class="setting-card-head"><div><h2>Encounters per hour</h2><p>Editable planning assumptions. Horde values count individual Pokémon shown.</p></div></div>
+      <div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div>
+    </article>
   </section>`;
 
-  let selectedSeason = s.currentSeason;
-  let selectedTime = s.currentTime;
   const previewFromForm = () => {
     const temp = settings();
     temp.baseShinyDenominator = Math.max(1, Number($("#base-shiny-denominator").value) || 30000);
@@ -836,17 +927,9 @@ function renderSettings() {
   $("#boost-donator").addEventListener("change", previewFromForm);
   $("#base-shiny-denominator").addEventListener("input", previewFromForm);
   $("#theme-mode").addEventListener("change", e => applyTheme(e.target.value));
-  $$('[data-season-choice]').forEach(btn => btn.addEventListener('click', () => {
-    selectedSeason = btn.dataset.seasonChoice;
-    $$('[data-season-choice]').forEach(x => { x.classList.toggle('active', x === btn); x.setAttribute('aria-pressed', x === btn); });
-  }));
-  $$('[data-time-choice]').forEach(btn => btn.addEventListener('click', () => {
-    selectedTime = btn.dataset.timeChoice;
-    $$('[data-time-choice]').forEach(x => { x.classList.toggle('active', x === btn); x.setAttribute('aria-pressed', x === btn); });
-  }));
   $("#save-settings").addEventListener("click",()=>{
     const next=settings();
-    next.settingsVersion=4;
+    next.settingsVersion=5;
     next.baseShinyDenominator=Math.max(1,Number($("#base-shiny-denominator").value)||30000);
     next.donatorStatus=$("#boost-donator").checked;
     next.shinyCharm=Number($(".exclusive-boost[data-group='charm']:checked")?.dataset.value||0);
@@ -854,14 +937,8 @@ function renderSettings() {
     next.adjustSafariCatch=$("#adjust-safari-catch").checked;
     next.shinySprites=$("#sprite-mode").value==="shiny";
     next.theme=$("#theme-mode").value;
-    next.lockSeason=$("#settings-lock-season").checked;
-    next.currentSeason=selectedSeason;
-    next.lockTime=$("#settings-lock-time").checked;
-    next.currentTime=selectedTime;
     $$(".speed-input").forEach(x=>next.speeds[x.dataset.method]=Math.max(0,Number(x.value)||0));
     saveJSON(STORAGE.settings,next);
-    state.hunterFilters.season = next.lockSeason ? next.currentSeason : state.hunterFilters.season;
-    state.hunterFilters.time = next.lockTime ? next.currentTime : state.hunterFilters.time;
     applyTheme(next.theme); toast("Settings saved");
   });
   $("#reset-settings").addEventListener("click",()=>{saveJSON(STORAGE.settings,defaultSettings());state.hunterFilters.season="All";state.hunterFilters.time="All";applyTheme("light");toast("Defaults restored");renderSettings();});
@@ -871,10 +948,11 @@ function renderSettings() {
 function renderAbout() {
   setActiveNav("about");
   setPageTitle("About");
-  $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A small browser companion for the PokeMMO Pokédex.</p></div></div>
-    <div class="about-grid">
-      <div class="about-column"><article class="setting-card"><h2>Credits</h2><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><div class="notice"><strong>Pokédex source:</strong> dump.zip</div><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a> — community-derived balls-only catch and flee estimates for Johto Safari and Sinnoh Great Marsh.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article><article class="setting-card"><h2>How hunt rankings work</h2><p>Hunts are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts change the estimated time, not the encounter ranking.</p><p>When enabled, known Johto Safari and Great Marsh hunts are adjusted by their estimated chance of catching the shiny. Technical table details remain available under <strong>Calculation notes</strong> in each full encounter split.</p></article></div>
-      <div class="about-column"><article class="setting-card"><h2>Browser storage</h2><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p></article><article class="setting-card"><h2>Today's Find</h2><p>Today's Find uses your local calendar date to select one obtainable Pokémon. It changes at local midnight.</p></article><article class="setting-card"><h2>Current data</h2><p>${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} full encounter splits are currently loaded.</p></article></div>
+  $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
+    <div class="about-simple-grid">
+      <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits and route comparisons by method, season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
+      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>Only normal wild ability slots are used for start-of-battle slowdown warnings; hidden abilities are excluded. Known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
+      <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
 }
 

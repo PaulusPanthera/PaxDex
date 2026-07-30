@@ -254,15 +254,24 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             "forms": [f.get("name") for f in forms if f.get("name")],
         })
 
+        raw_abilities = mon.get("abilities", [])
         unique_abilities = []
         seen_abilities = set()
-        for ability in mon.get("abilities", []):
+        for slot, ability in enumerate(raw_abilities):
             name = ability.get("name")
             if name and name != "-" and name not in seen_abilities:
                 seen_abilities.add(name)
-                unique_abilities.append({"id": ability.get("id"), "name": name})
+                unique_abilities.append({"id": ability.get("id"), "name": name, "hidden": slot >= 2})
         abilities_by_pid[pid] = [x["name"] for x in unique_abilities]
-        slow_abilities_by_pid[pid] = [x for x in abilities_by_pid[pid] if x in START_DELAY_ABILITIES]
+
+        # Normal wild encounters can only roll the first two ability slots.
+        # The third slot is the hidden ability and must not trigger a slowdown warning.
+        wild_ability_names = []
+        for ability in raw_abilities[:2]:
+            name = ability.get("name")
+            if name and name != "-" and name not in wild_ability_names:
+                wild_ability_names.append(name)
+        slow_abilities_by_pid[pid] = [x for x in wild_ability_names if x in START_DELAY_ABILITIES]
 
         moves_by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
         seen_moves: set[tuple] = set()
@@ -708,7 +717,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
-        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts, "source": dump_zip.name, "version": "0.11",
+        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts, "source": dump_zip.name, "version": "0.12",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

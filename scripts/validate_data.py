@@ -124,6 +124,22 @@ def main() -> int:
         if any(component.get("safariCapture") for component in table.get("components", [])):
             errors.append(f"Safari Zone Gate table {table_id} incorrectly has Safari catch estimates.")
 
+    # Hidden abilities cannot roll on ordinary wild encounters and must never create
+    # a start-of-battle slowdown warning. Houndour/Houndoom's Unnerve is the
+    # regression case; Growlithe's normal-slot Intimidate should still be marked.
+    for hidden_pid in (228, 229):
+        for table_id, table in encounter_tables.items():
+            component = next((c for c in table.get("components", []) if int(c.get("pokemonId", -1)) == hidden_pid), None)
+            if component and "Unnerve" in component.get("slowAbilities", []):
+                errors.append(f"Hidden-ability regression failed: #{hidden_pid} has Unnerve slowdown in table {table_id}.")
+    growlithe_slow = any(
+        int(component.get("pokemonId", -1)) == 58 and "Intimidate" in component.get("slowAbilities", [])
+        for table in encounter_tables.values()
+        for component in table.get("components", [])
+    )
+    if not growlithe_slow:
+        errors.append("Normal-ability slowdown regression failed: Growlithe Intimidate is not marked.")
+
     hunt_count = 0
     confidence_counts = {"High": 0, "Medium": 0, "Low": 0}
     for p in index:

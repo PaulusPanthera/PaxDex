@@ -1,26 +1,28 @@
-PAXDEX v0.11 · CLEANER HUNT RESULTS
-=========================================
+PAXDEX v0.12 · EVOLUTION-LINE HUNTING
+========================================
 
-A small, clean, 8-bit PokeMMO Pokédex and shiny-hunting route planner.
+A compact, route-first PokeMMO Pokédex and shiny-hunting planner.
 
 GITHUB PAGES
 ------------
-1. Create a GitHub repository and place the CONTENTS of this PaxDex folder at its root.
-2. Push to the main branch.
+1. Place the CONTENTS of this PaxDex folder at the root of your GitHub repository.
+2. Commit and push to the main branch.
 3. In GitHub: Settings > Pages > Source: GitHub Actions.
-4. The included workflow validates the generated data and deploys only production files.
+4. The included workflow validates the generated data and deploys production files.
 
-The site uses hash routes, relative paths and no server-side code, so it works from both
-an account Pages domain and a repository subdirectory.
+For updates, copy the new patch CONTENTS into the existing repository folder.
+Do not delete the existing folder, because its hidden .git directory connects it to GitHub.
 
-NEW IN v0.11
+NEW IN v0.12
 ------------
-- Removed repeated ranking-methodology copy from Shiny Hunter result headers.
-- Compact hunt cards now show only the useful result and confidence information.
-- Full encounter-table explanations are available in a collapsed Calculation notes section.
-- Ranking and Safari methodology now lives on the About page.
-- Shortened Settings, browser-storage and Today's Find explanations.
-- Retains the corrected 30 July 2026 dump data and all v0.10 validation fixes.
+- Added Exact form / Evolution line target scope to Shiny Hunter.
+- Evolution-line mode combines every wild evolution form in each route table.
+- Combined results show per-form encounters/hour and highlight every target form in the full split.
+- Hidden abilities are excluded from wild start-of-battle slowdown warnings.
+- Hidden abilities are labelled on Pokémon detail pages.
+- Replaced the generic home description with route- and encounter-focused copy.
+- Simplified Settings into compact Shiny odds, Display and Encounter speed sections.
+- Moved data status and methodology out of Settings and into a cleaner About page.
 
 LOCAL TESTING
 -------------
@@ -32,17 +34,15 @@ FEATURES
 - Searchable Gen 1-5 Pokédex with normal and shiny PokeMMO sprites
 - Stats, abilities, breeding groups, evolution family, held items and moves
 - Pokédex filtering by hunt method, generation and availability
-- Shiny Hunter ranked by target encounters per hour
-- Route Searcher with cascading Region > Route > Method > Season > Time choices
+- Shiny Hunter for an exact form or complete evolution line
+- Route Searcher with Region > Route > Method > Season > Time choices
 - Full method-specific encounter split inspector
-- Complete random-encounter composition including natural horde rolls
-- Per-species start-of-battle slowdown ability warnings
+- Natural horde rolls included in random encounter tables and extracted for Sweet Scent
+- Normal-slot start-of-battle slowdown warnings
 - Season and time-of-day selectors with optional locks
-- Shiny-odds calculator for Donator Status, 5%/10% Charms and 5%/10%/15% event bonuses
+- Editable shiny bonuses and encounters-per-hour assumptions
 - Community Safari estimates for matching Johto Safari and Sinnoh Great Marsh species
 - Light, dark and system display modes
-- Favorites displayed directly in the Shiny Hunter
-- Correct Sweet Scent normalization of 3x/5x horde blocks
 
 DATA
 ----

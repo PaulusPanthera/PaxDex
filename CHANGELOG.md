@@ -1,3 +1,16 @@
+# PaxDex v0.12
+
+- Added Shiny Hunter target scope: Exact form or Evolution line.
+- Evolution-line mode combines target shares and encounters/hour for every evolution form in the same encounter table.
+- Added per-form breakdowns and multi-target highlighting in full encounter splits.
+- Fixed slowdown warnings so hidden abilities cannot trigger a wild encounter warning.
+- Added hidden-ability labels to Pokémon detail pages.
+- Replaced the generic home description with route-focused copy.
+- Rebuilt Settings into a compact two-card layout with a grid of method speeds.
+- Removed redundant availability and data-status blocks from Settings.
+- Consolidated methodology, data status, privacy and credits on About.
+- Added hidden-ability, evolution-line and responsive browser smoke regressions.
+
 # PaxDex v0.11
 
 - Removed ranking-methodology text from the Shiny Hunter header.
