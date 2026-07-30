@@ -1,3 +1,14 @@
+# PaxDex v0.13
+
+- Replaced the browser datalist with a visual Pokémon picker using sprites, types and Pokédex numbers.
+- The selected Pokémon now stays selected when season, time or target scope changes.
+- Evolution-line mode now lists base forms only and automatically normalizes evolved selections to their line root.
+- Refreshed the Pokédex cards with type accents, larger sprites, generation labels and hunt-method hints.
+- Added held-item icons to Pokémon detail pages.
+- Grouped duplicate hunt-preview rows and added clearer route-table species previews.
+- Collapsed advanced encounter-speed settings to keep the Settings page compact.
+- Added persistent evolution-root and item-icon validation for future dump rebuilds.
+
 # PaxDex v0.12
 
 - Added Shiny Hunter target scope: Exact form or Evolution line.

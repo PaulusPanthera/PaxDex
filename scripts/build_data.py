@@ -190,6 +190,25 @@ def extract_sprites(zf: zipfile.ZipFile, root: Path, max_id: int) -> dict[str, i
     return dict(counts)
 
 
+
+def extract_item_icons(zf: zipfile.ZipFile, root: Path, item_ids: set[int]) -> int:
+    """Extract only item icons used by PaxDex, retaining existing icons for data-only dumps."""
+    names = set(zf.namelist())
+    out_dir = root / "sprites" / "items"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fallback_member = "sprites/itemicons/-1.png"
+    fallback_path = out_dir / "-1.png"
+    if fallback_member in names:
+        fallback_path.write_bytes(zf.read(fallback_member))
+    for item_id in sorted(item_ids):
+        member = f"sprites/itemicons/{item_id}.png"
+        target = out_dir / f"{item_id}.png"
+        if member in names:
+            target.write_bytes(zf.read(member))
+        elif not target.exists() and fallback_path.exists():
+            shutil.copy2(fallback_path, target)
+    return sum(1 for item_id in item_ids if (out_dir / f"{item_id}.png").exists())
+
 def connected_evolution_lines(monsters: dict[int, dict[str, Any]], max_id: int) -> dict[int, list[int]]:
     graph: dict[int, set[int]] = {pid: set() for pid in range(1, max_id + 1)}
     for pid, mon in monsters.items():
@@ -216,7 +235,7 @@ def connected_evolution_lines(monsters: dict[int, dict[str, Any]], max_id: int) 
 
 def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     data_dir = root / "data"
-    for d in (data_dir / "pokemon", data_dir / "hunts", root / "sprites" / "icons", root / "sprites" / "icons-shiny", root / "sprites" / "normal", root / "sprites" / "shiny"):
+    for d in (data_dir / "pokemon", data_dir / "hunts", root / "sprites" / "icons", root / "sprites" / "icons-shiny", root / "sprites" / "normal", root / "sprites" / "shiny", root / "sprites" / "items"):
         d.mkdir(parents=True, exist_ok=True)
 
     # Remove generated per-Pokémon files so a smaller future dump cannot leave stale rows behind.
@@ -234,6 +253,13 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         monsters = {pid: monsters_all[pid] for pid in range(1, max_id + 1) if pid in monsters_all}
         evo_lines = connected_evolution_lines(monsters, max_id)
         sprite_counts = extract_sprites(zf, root, max_id)
+        item_ids = {
+            int(item.get("id"))
+            for mon in monsters.values()
+            for item in mon.get("held_items", [])
+            if item.get("id") is not None
+        }
+        item_sprite_count = extract_item_icons(zf, root, item_ids)
 
     index: list[dict[str, Any]] = []
     abilities_by_pid: dict[int, list[str]] = {}
@@ -245,6 +271,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             if normalized and normalized not in types:
                 types.append(normalized)
         forms = [f for f in mon.get("forms", []) if f.get("is_released", True)]
+        evolution_line = evo_lines.get(pid, [pid])
         index.append({
             "id": pid,
             "name": mon.get("name", f"Pokémon {pid}"),
@@ -252,6 +279,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             "obtainable": bool(mon.get("obtainable", False)),
             "hasLocations": bool(mon.get("locations")),
             "forms": [f.get("name") for f in forms if f.get("name")],
+            "evolutionRootId": min(evolution_line),
+            "evolutionLine": evolution_line,
         })
 
         raw_abilities = mon.get("abilities", [])
@@ -717,7 +746,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
-        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts, "source": dump_zip.name, "version": "0.12",
+        "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.13",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

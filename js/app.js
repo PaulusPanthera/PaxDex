@@ -15,6 +15,7 @@ const state = {
   dexFilters: { query: "", method: "All", generation: "All", availability: "Obtainable" },
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
+  hunterSelectedId: null,
 };
 
 const STORAGE = {
@@ -178,6 +179,16 @@ function generationFor(id) {
   if (id <= 493) return 4;
   return 5;
 }
+function generationLabel(id) { return `Gen ${["", "I", "II", "III", "IV", "V"][generationFor(id)]}`; }
+function typeThemeClass(types = []) {
+  const primary = String(types.find(Boolean) || "normal").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return `type-theme-${primary || "normal"}`;
+}
+function itemImageTag(item) {
+  const id = Number(item?.id);
+  if (!Number.isFinite(id)) return "";
+  return `<img class="item-icon" src="sprites/items/${id}.png" alt="" aria-hidden="true" loading="lazy" onerror="this.remove()">`;
+}
 function formatNumber(n, digits = 1) {
   return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 }
@@ -306,21 +317,118 @@ function addRecent(id) {
   saveJSON(STORAGE.recent, items.slice(0, 8));
 }
 
-function findPokemon(query) {
-  const q = query.trim().toLowerCase();
+function findPokemon(query, pool = state.pokemon) {
+  const q = String(query || "").trim().toLowerCase();
   if (!q) return null;
-  const exact = state.pokemon.find(p => p.name.toLowerCase() === q || String(p.id) === q.replace(/^#/, ""));
-  return exact || state.pokemon.find(p => p.name.toLowerCase().includes(q));
+  const exact = pool.find(p => p.name.toLowerCase() === q || String(p.id) === q.replace(/^#/, ""));
+  return exact || pool.find(p => p.name.toLowerCase().includes(q));
+}
+function evolutionRootId(pokemonOrId) {
+  const pokemon = typeof pokemonOrId === "object" ? pokemonOrId : state.pokemonById.get(Number(pokemonOrId));
+  return Number(pokemon?.evolutionRootId || pokemon?.id || 0);
+}
+function hunterPickerPool(mode = settings().hunterTargetMode) {
+  const pool = state.pokemon.filter(p => p.hasLocations);
+  if (normalizedTargetMode(mode) !== "line") return pool;
+  return pool.filter(p => p.id === evolutionRootId(p) && (p.evolutionLine || [p.id]).some(id => state.pokemonById.get(Number(id))?.hasLocations));
+}
+function normalizedHunterSelection(id, mode = settings().hunterTargetMode) {
+  const pokemon = state.pokemonById.get(Number(id));
+  if (!pokemon) return null;
+  return normalizedTargetMode(mode) === "line" ? evolutionRootId(pokemon) : pokemon.id;
+}
+function hunterPickerMatches(query, mode) {
+  const pool = hunterPickerPool(mode);
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) {
+    const priority = [...favorites(), ...recent()].map(id => normalizedHunterSelection(id, mode));
+    const ordered = [...new Set(priority)].map(id => state.pokemonById.get(id)).filter(p => p && pool.some(candidate => candidate.id === p.id));
+    return [...ordered, ...pool.filter(p => !ordered.some(item => item.id === p.id))].slice(0, 10);
+  }
+  const number = q.replace(/^#/, "");
+  return pool
+    .filter(p => p.name.toLowerCase().includes(q) || String(p.id).includes(number))
+    .sort((a, b) => {
+      const aName = a.name.toLowerCase(); const bName = b.name.toLowerCase();
+      const aScore = aName === q ? 0 : aName.startsWith(q) ? 1 : String(a.id) === number ? 0 : 2;
+      const bScore = bName === q ? 0 : bName.startsWith(q) ? 1 : String(b.id) === number ? 0 : 2;
+      return aScore - bScore || a.id - b.id;
+    })
+    .slice(0, 12);
+}
+function hunterPickerMarkup(selected, mode) {
+  const lineMode = normalizedTargetMode(mode) === "line";
+  const lineCount = selected ? (selected.evolutionLine || [selected.id]).length : 0;
+  return `<div class="pokemon-picker" id="hunter-picker">
+    <form class="pokemon-picker-bar" id="hunter-search">
+      <div class="pokemon-picker-input">
+        ${selected ? imageTag(selected.id, selected.name, { icon:true, className:"picker-selected-icon" }) : '<span class="picker-search-icon" aria-hidden="true">⌕</span>'}
+        <input id="hunter-pokemon-input" name="pokemon" autocomplete="off" value="${selected ? escapeHtml(selected.name) : ""}" placeholder="Search a Pokémon or Pokédex number…" aria-label="Choose a Pokémon" aria-controls="hunter-picker-results" aria-expanded="false">
+        ${selected ? '<button class="picker-clear" id="hunter-picker-clear" type="button" aria-label="Clear selected Pokémon">×</button>' : ""}
+      </div>
+      <button class="pixel-btn" type="submit" ${selected ? "" : "disabled"}>${selected ? "Compare routes" : "Select a Pokémon"}</button>
+    </form>
+    <div class="pokemon-picker-results" id="hunter-picker-results" role="listbox" hidden></div>
+    ${selected ? `<div class="selected-target-summary ${typeThemeClass(selected.types)}"><span>${lineMode ? "Evolution line" : "Exact form"}</span><strong>${escapeHtml(selected.name)}${lineMode && lineCount > 1 ? ` · ${lineCount} forms` : ""}</strong><small>${lineMode ? "Only base forms are listed while evolution-line mode is active." : `${generationLabel(selected.id)} · ${(selected.methods || []).length} wild methods`}</small></div>` : `<p class="picker-hint">${lineMode ? "Choose the base form of an evolution line." : "Start typing to search all wild Pokémon."}</p>`}
+  </div>`;
+}
+function bindHunterPicker(mode) {
+  const input = $("#hunter-pokemon-input");
+  const results = $("#hunter-picker-results");
+  const form = $("#hunter-search");
+  if (!input || !results || !form) return;
+  const renderMatches = () => {
+    const matches = hunterPickerMatches(input.value, mode);
+    results.innerHTML = matches.length ? matches.map(p => {
+      const lineCount = (p.evolutionLine || [p.id]).length;
+      return `<button class="pokemon-picker-option" type="button" role="option" data-picker-pokemon="${p.id}">
+        ${imageTag(p.id, p.name, { icon:true })}
+        <span><strong>${escapeHtml(p.name)}</strong><small>#${String(p.id).padStart(3,"0")} · ${normalizedTargetMode(mode) === "line" ? `${lineCount} ${lineCount === 1 ? "form" : "forms"}` : generationLabel(p.id)}</small></span>
+        <span class="picker-types">${typeBadges(p.types)}</span>
+      </button>`;
+    }).join("") : '<div class="picker-empty">No wild Pokémon found.</div>';
+    results.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    $$('[data-picker-pokemon]', results).forEach(button => button.addEventListener('mousedown', event => {
+      event.preventDefault();
+      state.hunterSelectedId = normalizedHunterSelection(Number(button.dataset.pickerPokemon), mode);
+      renderHunter();
+    }));
+  };
+  input.addEventListener("focus", () => { if (state.hunterSelectedId) input.select(); renderMatches(); });
+  input.addEventListener("input", () => {
+    const exact = findPokemon(input.value, hunterPickerPool(mode));
+    state.hunterSelectedId = exact && exact.name.toLowerCase() === input.value.trim().toLowerCase() ? normalizedHunterSelection(exact.id, mode) : null;
+    form.querySelector('button[type="submit"]').disabled = !state.hunterSelectedId;
+    renderMatches();
+  });
+  input.addEventListener("keydown", event => {
+    if (event.key === "Escape") { results.hidden = true; input.setAttribute("aria-expanded", "false"); input.blur(); }
+    if (event.key === "Enter" && !state.hunterSelectedId) {
+      const first = hunterPickerMatches(input.value, mode)[0];
+      if (first) { event.preventDefault(); state.hunterSelectedId = normalizedHunterSelection(first.id, mode); renderHunter(); }
+    }
+  });
+  input.addEventListener("blur", () => setTimeout(() => { results.hidden = true; input.setAttribute("aria-expanded", "false"); }, 120));
+  $("#hunter-picker-clear")?.addEventListener("click", () => { state.hunterSelectedId = null; renderHunter(); });
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const chosen = state.hunterSelectedId || normalizedHunterSelection(findPokemon(input.value, hunterPickerPool(mode))?.id, mode);
+    if (chosen) go(`hunter/${chosen}`); else toast("Choose a Pokémon first");
+  });
 }
 
 function pokemonCard(p, { shiny = settings().shinySprites, target = "pokemon" } = {}) {
   const fav = favorites().has(p.id);
-  return `<article class="pokemon-card" data-pokemon-id="${p.id}">
+  const methods = (p.methods || []).slice(0, 2);
+  const extraMethods = Math.max(0, (p.methods || []).length - methods.length);
+  return `<article class="pokemon-card ${typeThemeClass(p.types)}" data-pokemon-id="${p.id}">
     <a class="pokemon-card-link" href="#${target}/${p.id}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
-    <span class="number">#${String(p.id).padStart(3, "0")}</span>
+    <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span></div>
     <button class="favorite-star ${fav ? "on" : ""}" type="button" data-favorite="${p.id}" aria-label="${fav ? "Remove" : "Add"} ${escapeHtml(p.name)} ${fav ? "from" : "to"} favorites">★</button>
     <div class="sprite-box">${imageTag(p.id, p.name, { shiny, icon: true })}</div>
-    <div><h3>${escapeHtml(p.name)}</h3><div class="type-row">${typeBadges(p.types)}</div></div>
+    <div class="pokemon-card-copy"><h3>${escapeHtml(p.name)}</h3><div class="type-row">${typeBadges(p.types)}</div></div>
+    <div class="pokemon-card-foot">${methods.length ? methods.map(method => `<span>${escapeHtml(method)}</span>`).join("") + (extraMethods ? `<span>+${extraMethods}</span>` : "") : '<span>No wild route</span>'}</div>
   </article>`;
 }
 
@@ -331,9 +439,9 @@ function renderHome() {
   const recentMons = recent().map(id => state.pokemonById.get(id)).filter(Boolean);
   $("#app").innerHTML = `<section class="hero">
     <div class="hero-copy">
-      <span class="eyebrow">A small PokeMMO field guide</span>
+      <span class="eyebrow">PokeMMO encounter field guide</span>
       <h1>Find a Pokémon.<br><span>Find its best hunt.</span></h1>
-      <p>Browse PokeMMO encounter data without digging through the in-game Dex. Compare exact route splits, seasons and methods, then find the fastest hunt for one form or its whole evolution line.</p>
+      <p>A compact field guide built around one question: where and when should I hunt this Pokémon? Browse clean species pages, inspect exact encounter splits, or compare every route for one form or its full evolution line.</p>
       <form class="search-panel" id="home-search">
         <input name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Search Bulbasaur, Pikachu, #133…" aria-label="Search Pokémon">
         <button class="pixel-btn" type="submit">Open Pokédex</button>
@@ -421,6 +529,16 @@ function statRows(stats) {
     return `<div class="stat-row"><span>${label}</span><strong>${value}</strong><div class="stat-track"><i style="width:${width}%"></i></div></div>`;
   }).join("");
 }
+function groupedHuntPreview(hunts, limit = 5) {
+  const grouped = new Map();
+  rankHunts(hunts).filter(h => h.speed > 0).forEach(hunt => {
+    const key = `${hunt.location}|${hunt.method}|${Number(hunt.share).toFixed(7)}`;
+    if (!grouped.has(key)) grouped.set(key, { ...hunt, availability: [] });
+    const row = grouped.get(key);
+    hunt.availability.forEach(a => { if (!row.availability.some(x => x.season === a.season && x.time === a.time)) row.availability.push(a); });
+  });
+  return [...grouped.values()].sort((a,b) => b.targetEph - a.targetEph || a.location.localeCompare(b.location)).slice(0, limit);
+}
 
 async function renderPokemon(id) {
   const p = state.pokemonById.get(id);
@@ -432,11 +550,11 @@ async function renderPokemon(id) {
   const [detail, hunts] = await Promise.all([getDetail(id), getHunts(id)]);
   const s = settings(); const fav = favorites().has(id);
   const line = detail.evolutionLine.map(x => state.pokemonById.get(x)).filter(Boolean);
-  const ranked = rankHunts(hunts).slice(0, 5);
-  $("#app").innerHTML = `<section>
+  const ranked = groupedHuntPreview(hunts, 5);
+  $("#app").innerHTML = `<section class="pokemon-detail-page ${typeThemeClass(p.types)}">
     <a class="back-link" href="#dex">← Back to Pokédex</a>
     <div class="detail-hero">
-      <div class="detail-sprite-card">
+      <div class="detail-sprite-card ${typeThemeClass(p.types)}">
         <button class="pixel-btn small shiny-toggle ${s.shinySprites?"active":""}" id="detail-shiny">${s.shinySprites?"✨ Shiny":"☆ Normal"}</button>
         ${imageTag(id, p.name, { shiny:s.shinySprites })}
       </div>
@@ -465,8 +583,8 @@ async function renderPokemon(id) {
       <aside>
         <article class="detail-card"><h2>Abilities</h2><div class="chip-list">${detail.abilities.map(a=>`<span class="chip ${a.hidden ? "hidden-ability-chip" : ""}">${escapeHtml(a.name)}${a.hidden ? " · Hidden" : ""}</span>`).join("") || '<span class="chip">—</span>'}</div></article>
         <article class="detail-card"><h2>Breeding</h2><div class="chip-list">${detail.eggGroups.map(x=>`<span class="chip">${escapeHtml(x)}</span>`).join("") || '<span class="chip">Cannot breed</span>'}</div></article>
-        <article class="detail-card"><h2>Wild held items</h2><div class="chip-list">${detail.heldItems.map(x=>`<span class="chip">${escapeHtml(x.name)}</span>`).join("") || '<span class="chip">None listed</span>'}</div></article>
-        <article class="detail-card"><h2>Best hunt preview</h2>${ranked.length ? ranked.map((h,i)=>`<div style="padding:10px 0;border-top:2px solid #ded7bc"><strong>${i+1}. ${escapeHtml(h.location)}</strong><br><small>${escapeHtml(h.method)} · ${formatPercent(h.share)} · ${formatRate(h.targetEph)} target encounters/hr</small></div>`).join("") + `<a class="pixel-btn small" style="margin-top:12px" href="#hunter/${id}">Compare all spots</a>` : '<p>No wild encounter listed.</p>'}</article>
+        <article class="detail-card"><h2>Wild held items</h2>${detail.heldItems.length ? `<div class="item-grid">${detail.heldItems.map(item=>`<div class="item-entry">${itemImageTag(item)}<span>${escapeHtml(item.name)}</span></div>`).join("")}</div>` : '<p class="muted-empty">None listed.</p>'}</article>
+        <article class="detail-card hunt-preview-card"><div class="card-title-row"><h2>Best hunt preview</h2><a class="text-link" href="#hunter/${id}">Compare all →</a></div>${ranked.length ? `<div class="hunt-preview-list">${ranked.map((h,i)=>`<a class="hunt-preview-row" href="#hunter/${id}"><span class="hunt-preview-rank">${i+1}</span><span><strong>${escapeHtml(h.location)}</strong><small>${escapeHtml(h.method)} · ${formatPercent(h.share)} target share</small><span class="hunt-preview-availability">${availabilityVisual(h.availability)}</span></span><b>${formatRate(h.targetEph)}/hr</b></a>`).join("")}</div>` : '<p>No wild encounter listed.</p>'}</article>
       </aside>
     </div>
   </section>`;
@@ -640,6 +758,12 @@ async function renderHunter(id = null) {
   setActiveNav("hunter");
   const s = settings();
   const targetMode = normalizedTargetMode(s.hunterTargetMode);
+  if (id) {
+    id = normalizedHunterSelection(id, targetMode);
+    state.hunterSelectedId = id;
+  } else if (state.hunterSelectedId) {
+    state.hunterSelectedId = normalizedHunterSelection(state.hunterSelectedId, targetMode);
+  }
   if (s.lockSeason && s.currentSeason !== "All") state.hunterFilters.season = s.currentSeason;
   if (s.lockTime && s.currentTime !== "All") state.hunterFilters.time = s.currentTime;
 
@@ -653,13 +777,11 @@ async function renderHunter(id = null) {
   if (!id) {
     setPageTitle("Shiny Hunter");
     const favMons = [...favorites()].map(x => state.pokemonById.get(x)).filter(Boolean);
+    const selected = state.pokemonById.get(Number(state.hunterSelectedId)) || null;
     $("#app").innerHTML = `<section>
       <div class="section-head"><div><span class="eyebrow">Route planner</span><h1 class="page-title">Shiny Hunter</h1><p>Choose a Pokémon, then compare exact routes or its complete evolution line.</p></div></div>
       <div class="panel hunter-start-panel">
-        <form class="search-panel" id="hunter-search">
-          <input name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Which Pokémon are you hunting?" aria-label="Select Pokémon">
-          <button class="pixel-btn" type="submit">Find hunts</button>
-        </form>
+        ${hunterPickerMarkup(selected, targetMode)}
         <div class="hunter-scope-row">
           <div><strong>What counts as the target?</strong><small>Use one exact form, or combine every wild form in its evolution line.</small></div>
           ${targetModeControl(targetMode, "Shiny Hunter target scope")}
@@ -682,8 +804,13 @@ async function renderHunter(id = null) {
         </div>
       </div>
     </section>`;
-    $("#hunter-search").addEventListener("submit", e => { e.preventDefault(); const p=findPokemon(new FormData(e.currentTarget).get("pokemon")||""); if(p)go(`hunter/${p.id}`);else toast("I couldn't find that Pokémon"); });
-    $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => { saveTargetMode(btn.dataset.targetMode); renderHunter(); }));
+    bindHunterPicker(targetMode);
+    $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => {
+      const mode = normalizedTargetMode(btn.dataset.targetMode);
+      saveTargetMode(mode);
+      if (state.hunterSelectedId) state.hunterSelectedId = normalizedHunterSelection(state.hunterSelectedId, mode);
+      renderHunter();
+    }));
     $$('[data-season-choice]').forEach(btn => btn.addEventListener('click', () => {
       state.hunterFilters.season = btn.dataset.seasonChoice;
       const next = settings();
@@ -762,7 +889,13 @@ async function renderHunter(id = null) {
     ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1,lineMode)).join("")}</div></section>`).join("") : ""}
   </section>`;
   const rerender = () => renderHunter(id);
-  $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => { saveTargetMode(btn.dataset.targetMode); rerender(); }));
+  $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => {
+    const mode = normalizedTargetMode(btn.dataset.targetMode);
+    saveTargetMode(mode);
+    const nextId = normalizedHunterSelection(id, mode);
+    state.hunterSelectedId = nextId;
+    if (nextId !== id) go(`hunter/${nextId}`); else rerender();
+  }));
   [["#hunt-method","method"],["#hunt-region","region"],["#hunt-confidence","confidence"]].forEach(([sel,key]) => $(sel).addEventListener("change",e=>{state.hunterFilters[key]=e.target.value;rerender();}));
   $$('[data-season-choice]').forEach(btn => btn.addEventListener('click', () => {
     state.hunterFilters.season = btn.dataset.seasonChoice;
@@ -799,12 +932,17 @@ function routeOption(row) {
     maxLevel: 0,
   };
 }
+function routeSpeciesPreview(table) {
+  if (!table?.components?.length) return "";
+  const components = table.components.slice(0, 4);
+  return `<div class="route-species-preview">${components.map(component => `<span title="${escapeHtml(component.name)} · ${formatPercent(component.share)}">${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
+}
 
 async function renderRouteSearcher() {
   setActiveNav("routes");
   setPageTitle("Route Searcher");
   $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Opening route tables…</p></section>`;
-  const routes = await getRouteIndex();
+  const [routes, encounterTables] = await Promise.all([getRouteIndex(), getEncounterTables()]);
   const speeds = settings().speeds;
   const viable = routes.filter(row => Number(speeds[row.method] || 0) > 0);
   const regions = [...new Set(viable.map(row => row.region))].sort();
@@ -854,7 +992,7 @@ async function renderRouteSearcher() {
       <button class="pixel-btn ghost route-reset" id="route-reset" type="button">Reset</button>
     </div>
     ${!f.region ? `<div class="route-guide"><strong>Start with a region.</strong><span>Each following choice only shows options that actually exist for the previous selection.</span></div>` : !f.location ? `<div class="route-guide"><strong>${locations.length} viable areas in ${escapeHtml(f.region)}.</strong><span>Choose one to see only the methods available there.</span></div>` : !f.method ? `<div class="route-guide"><strong>${methods.length} viable ${methods.length===1?"method":"methods"} at ${escapeHtml(f.location)}.</strong><span>Choose a method to unlock its viable seasons and times.</span></div>` : ""}
-    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${formatNumber(Number(speeds[f.method]||0),0)}/hr</strong><small>method speed</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div><span class="route-result-number">${i+1}</span><strong>${escapeHtml(row.encounterType)}</strong></div><div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary"><span>${escapeHtml(row.confidence)} confidence</span><span>${row.containsRandomHordes ? "Includes natural horde roll" : `Raw ${formatPercent(row.rawTableTotal,row.rawTableTotal<.1?1:0)}`}</span></div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
+    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${formatNumber(Number(speeds[f.method]||0),0)}/hr</strong><small>method speed</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary"><span>${escapeHtml(row.confidence)} confidence</span><span>${row.containsRandomHordes ? "Includes natural horde roll" : `Raw ${formatPercent(row.rawTableTotal,row.rawTableTotal<.1?1:0)}`}</span></div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
   </section>`;
 
   $("#route-region").addEventListener("change", e => { state.routeFilters={region:e.target.value,location:"",method:"",season:"All",time:"All"}; renderRouteSearcher(); });
@@ -905,10 +1043,10 @@ function renderSettings() {
         <div class="display-actions"><button class="pixel-btn ghost" id="clear-favorites">Clear favorites</button><a class="text-link" href="#about">Data and calculation notes →</a></div>
       </article>
     </div>
-    <article class="setting-card speed-settings-card">
-      <div class="setting-card-head"><div><h2>Encounters per hour</h2><p>Editable planning assumptions. Horde values count individual Pokémon shown.</p></div></div>
-      <div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div>
-    </article>
+    <details class="setting-card speed-settings-card settings-details">
+      <summary><span><strong>Encounter pace</strong><small>Edit the per-hour assumptions used for route rankings.</small></span><b>${state.methods.filter(m=>Number(s.speeds[m.id]||0)>0).length} active methods</b></summary>
+      <div class="speed-settings-body"><p class="settings-note">Horde values count individual Pokémon shown, not battle screens.</p><div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div></div>
+    </details>
   </section>`;
 
   const previewFromForm = () => {

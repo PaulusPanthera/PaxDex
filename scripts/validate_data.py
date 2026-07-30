@@ -62,6 +62,16 @@ def main() -> int:
     for sprite_kind in ("icons", "icons-shiny", "normal", "shiny"):
         if int(build_info.get("sprites", {}).get(sprite_kind, -1)) != len(index):
             errors.append(f"build-info {sprite_kind} sprite count is {build_info.get('sprites', {}).get(sprite_kind)}, expected {len(index)}.")
+    for p in index:
+        pid = int(p["id"])
+        line = [int(x) for x in p.get("evolutionLine", [pid])]
+        root_id = int(p.get("evolutionRootId", pid))
+        if pid not in line:
+            errors.append(f"Compact index evolution line for #{pid} does not contain itself.")
+        if root_id != min(line):
+            errors.append(f"Compact index evolution root for #{pid} is {root_id}, expected {min(line)}.")
+        if root_id not in ids:
+            errors.append(f"Compact index evolution root for #{pid} references missing Pokémon #{root_id}.")
 
     method_ids = {m["id"] for m in methods}
     method_defaults = {m["id"]: float(m.get("defaultEph", 0)) for m in methods}
@@ -141,6 +151,7 @@ def main() -> int:
         errors.append("Normal-ability slowdown regression failed: Growlithe Intimidate is not marked.")
 
     hunt_count = 0
+    held_item_ids: set[int] = set()
     confidence_counts = {"High": 0, "Medium": 0, "Low": 0}
     for p in index:
         pid = int(p["id"])
@@ -165,6 +176,10 @@ def main() -> int:
         for item in detail.get("heldItems", []):
             if has_invalid_dump_decoration(item.get("name")):
                 errors.append(f"Decorated or invalid held-item label remains for #{pid}: {item.get('name')!r}.")
+            if item.get("id") is not None:
+                item_id = int(item["id"]); held_item_ids.add(item_id)
+                if not (ROOT / "sprites" / "items" / f"{item_id}.png").exists():
+                    errors.append(f"Missing item icon #{item_id} used by #{pid} {p.get('name', '')}.")
         for evolution in detail.get("evolutions", []):
             if evolution.get("item_name") and has_invalid_dump_decoration(evolution.get("item_name")):
                 errors.append(f"Decorated or invalid evolution-item label remains for #{pid}: {evolution.get('item_name')!r}.")
@@ -248,6 +263,8 @@ def main() -> int:
 
     if int(build_info.get("huntOptions", -1)) != hunt_count:
         errors.append(f"build-info hunt count is {build_info.get('huntOptions')}, generated files contain {hunt_count}.")
+    if int(build_info.get("itemSprites", -1)) != len(held_item_ids):
+        errors.append(f"build-info item sprite count is {build_info.get('itemSprites')}, expected {len(held_item_ids)} held-item icons.")
 
     bulba = find_option(1, location="Viridian Forest", method="Lure Singles", season="Spring", time="Morning")
     if not bulba:
@@ -319,8 +336,8 @@ def main() -> int:
 
     print("VALIDATION PASSED")
     print(f"- {len(index)} Pokédex entries and {hunt_count:,} hunt options loaded")
-    print("- All Pokémon detail, hunt and sprite files are present")
-    print("- All regions, encounter labels, methods, shares, seasons, times, table references and confidence values are valid")
+    print(f"- All Pokémon detail, hunt and sprite files are present, including {len(held_item_ids)} held-item icons")
+    print("- Evolution roots, regions, encounter labels, methods, shares, seasons, times, table references and confidence values are valid")
     print("- No control characters or decorated dump prefixes leaked into published labels")
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
