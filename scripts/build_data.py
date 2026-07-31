@@ -28,7 +28,7 @@ REGION_LABEL_RE = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
 REGION_ID_NAMES = {0: "Kanto", 1: "Hoenn", 2: "Unova", 3: "Sinnoh", 4: "Johto"}
 
 # The dump exposes the twelve Johto Safari biomes as stable location IDs, but
-# gives every one of them the same generic location name and marks land as
+# gives every one of them the same generic location name and marks on-foot encounters as
 # "Cave". The species pools match the standard biome names one-to-one.
 JOHTO_SAFARI_AREAS = {
     343: "Plains",
@@ -107,13 +107,13 @@ def normalize_safari_location(region: str, location_id: int, location: str) -> s
 
 
 def normalize_safari_encounter_type(region: str, encounter_type: str, safari: bool) -> str:
-    """Translate dump-internal Safari land labels into a clear field label."""
+    """Translate dump-internal Safari walking labels into the standard Grass label."""
     if not safari:
         return encounter_type
     if region == "Johto" and encounter_type == "Cave":
-        return "Land"
+        return "Grass"
     if region == "Sinnoh" and encounter_type == "Inside":
-        return "Land"
+        return "Grass"
     return encounter_type
 
 START_DELAY_ABILITIES = {
@@ -267,25 +267,25 @@ def safari_pool_metadata(region: str, encounter_type: str, method: str, raw_tota
     if not safari:
         return None
     lure_model = method.startswith("Lure")
-    if region == "Johto" and encounter_type == "Land":
+    if region == "Johto" and encounter_type == "Grass":
         return {
             "status": "partial",
-            "label": "Base land pool",
+            "label": "Base grass pool",
             "documentedTotal": 0.9,
             "lureModel": lure_model,
             "note": (
-                "The static dump documents the 90% base land pool. "
+                "The static dump documents the 90% base grass pool. "
                 "Block- and rotation-dependent encounters are not assigned to this table."
             ),
         }
-    if region == "Sinnoh" and encounter_type == "Land":
+    if region == "Sinnoh" and encounter_type == "Grass":
         return {
             "status": "partial",
-            "label": "Base land pool",
+            "label": "Base grass pool",
             "documentedTotal": 0.8,
             "lureModel": lure_model,
             "note": (
-                "The static dump documents the 80% base land pool. "
+                "The static dump documents the 80% base grass pool. "
                 "Daily Great Marsh rotation encounters are not included."
             ),
         }
@@ -1127,7 +1127,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.20",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.21",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

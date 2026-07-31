@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VALID_SEASONS = {"Any", "Spring", "Summer", "Autumn", "Winter"}
 VALID_TIMES = {"Morning", "Day", "Night"}
 VALID_REGIONS = {"Kanto", "Hoenn", "Unova", "Sinnoh", "Johto"}
-VALID_ENCOUNTER_TYPES = {"Grass", "Land", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
+VALID_ENCOUNTER_TYPES = {"Grass", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
 REQUIRED_HUNT_KEYS = {
     "region", "location", "encounterType", "method", "share", "minLevel",
     "maxLevel", "confidence", "note", "availability", "tableId"
@@ -169,12 +169,12 @@ def main() -> int:
             pool = table.get("safariPool") or {}
             if not pool.get("status") or not pool.get("label"):
                 errors.append(f"Safari encounter table {table_id} is missing source-coverage metadata.")
-            if table.get("region") == "Johto" and table.get("encounterType") == "Land":
+            if table.get("region") == "Johto" and table.get("encounterType") == "Grass":
                 if pool.get("status") != "partial" or abs(float(pool.get("documentedTotal", 0)) - 0.9) > 0.00001:
-                    errors.append(f"Johto Safari land table {table_id} must be labelled as a 90% documented base pool.")
-            if table.get("region") == "Sinnoh" and table.get("encounterType") == "Land":
+                    errors.append(f"Johto Safari grass table {table_id} must be labelled as a 90% documented base pool.")
+            if table.get("region") == "Sinnoh" and table.get("encounterType") == "Grass":
                 if pool.get("status") != "partial" or abs(float(pool.get("documentedTotal", 0)) - 0.8) > 0.00001:
-                    errors.append(f"Sinnoh Great Marsh land table {table_id} must be labelled as an 80% documented base pool.")
+                    errors.append(f"Sinnoh Great Marsh grass table {table_id} must be labelled as an 80% documented base pool.")
         components = table.get("components", [])
         if not components:
             errors.append(f"Encounter table {table_id} has no components.")
@@ -549,8 +549,8 @@ def main() -> int:
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
     print("- Safari self-harm warnings are suppressed while global Pokédex warnings remain available")
-    print("- Johto Safari biome names, Hoenn area numbers and Safari land labels are normalized")
-    print("- Johto 90% and Sinnoh 80% static land pools carry clear source-coverage metadata")
+    print("- Johto Safari biome names, Hoenn area numbers and Safari walking labels are normalized to Grass")
+    print("- Johto 90% and Sinnoh 80% static grass pools carry clear source-coverage metadata")
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")
     print("- Lure, globally Lure-exclusive, Special/phenomenon and Fossil Pokédex categories validated")
     print("- 100% horde species keep their labels but are excluded from the corresponding Split search")

@@ -1,13 +1,11 @@
-PAXDEX v0.20 · SAFARI AREA AND SOURCE-COVERAGE CLEANUP
+PAXDEX v0.21 · SAFARI GRASS LABEL CLEANUP
 
 Open locally with START_PAXDEX.bat or publish the repository through GitHub Pages.
 
-NEW IN v0.20
-- Johto Safari tables now use the twelve proper biome names instead of generic numbered Cave tables.
-- Johto Safari and Sinnoh Great Marsh land encounters are labelled Land.
-- Hoenn Safari keeps its compass names and now also shows Area 1–6 numbering.
-- Safari views no longer show irrelevant wild self-harm warnings.
-- Partial Johto and Sinnoh land pools use clear base-pool coverage labels instead of misleading raw/confidence badges.
+NEW IN v0.21
+- Johto Safari and Sinnoh Great Marsh walking encounters now use the standard Grass label.
+- Safari biome names remain separate, such as Safari Zone — Mountain · Grass.
+- Partial Johto and Sinnoh pools now use Base grass pool wording.
 
 DATA
 - 649 Pokémon
@@ -17,4 +15,4 @@ DATA
 
 UPDATE DATA
 Place a fresh dump at input/dump.zip and run UPDATE_FROM_DUMP.bat.
-The builder reapplies Safari area mappings, source-coverage labels, categories and warnings automatically.
+The builder reapplies Safari area mappings, Grass labels, source-coverage labels, categories and warnings automatically.

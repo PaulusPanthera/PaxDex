@@ -1,3 +1,9 @@
+# PaxDex v0.21
+
+- Replaced the custom **Land** label with the standard **Grass** label for Johto Safari and Sinnoh Great Marsh walking encounters.
+- Kept biome and area names separate, such as **Safari Zone — Mountain · Grass**.
+- Updated partial-pool wording from **Base land pool** to **Base grass pool**.
+
 # PaxDex v0.20
 
 - Replaced Johto Safari's generic numbered Cave tables with the twelve proper biome names: Plains, Meadow, Savannah, Peak, Rocky Beach, Wetland, Forest, Swamp, Marshland, Wasteland, Mountain and Desert.
