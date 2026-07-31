@@ -5,6 +5,7 @@ const state = {
   pokemon: [],
   pokemonById: new Map(),
   methods: [],
+  dexCategories: [],
   buildInfo: null,
   detailCache: new Map(),
   huntCache: new Map(),
@@ -13,7 +14,7 @@ const state = {
   routeIndex: null,
   activeHuntMap: new Map(),
   dexPage: 1,
-  dexFilters: { query: "", method: "All", season: "All", time: "All", generation: "All", availability: "Obtainable" },
+  dexFilters: { query: "", category: "All", season: "All", time: "All", generation: "All", availability: "Obtainable" },
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
   hunterSelectedId: null,
@@ -173,6 +174,19 @@ function escapeHtml(value = "") {
 function typeBadge(type) { return `<span class="type-badge type-${type.toLowerCase()}">${escapeHtml(type)}</span>`; }
 function typeBadges(types = []) {
   return [...new Set(types.filter(Boolean))].map(typeBadge).join("");
+}
+
+function selfHarmRiskText(risks = []) {
+  if (!risks.length) return "";
+  return risks.map(risk => {
+    const levelText = risk.levels ? ` · Lv. ${risk.levels}` : "";
+    return `${risk.name}${levelText}: ${risk.description || "Can reduce its own HP."}`;
+  }).join(" | ");
+}
+function selfHarmWarning(risks = [], { compact = false } = {}) {
+  if (!risks.length) return "";
+  const title = `Wild encounter danger · ${selfHarmRiskText(risks)}`;
+  return `<span class="wild-risk-marker ${compact ? "compact" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><span aria-hidden="true">⚠</span>${compact ? "" : "<b>Wild risk</b>"}</span>`;
 }
 function generationFor(id) {
   if (id <= 151) return 1;
@@ -521,16 +535,17 @@ function orderedMethods(methods = []) {
 }
 function pokemonCard(p, { shiny = settings().shinySprites, target = "pokemon" } = {}) {
   const fav = favorites().has(p.id);
-  const allMethods = orderedMethods(p.methods || []);
-  const methods = allMethods.slice(0, 2);
-  const extraMethods = Math.max(0, allMethods.length - methods.length);
+  const allCategories = p.dexCategories || [];
+  const categories = allCategories.slice(0, 2);
+  const extraCategories = Math.max(0, allCategories.length - categories.length);
+  const risks = p.wildSelfHarmRisks || [];
   return `<article class="pokemon-card ${typeThemeClass(p.types)}" data-pokemon-id="${p.id}">
     <a class="pokemon-card-link" href="#${target}/${p.id}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
-    <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span></div>
+    <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span>${selfHarmWarning(risks,{compact:true})}</div>
     <button class="favorite-star ${fav ? "on" : ""}" type="button" data-favorite="${p.id}" aria-label="${fav ? "Remove" : "Add"} ${escapeHtml(p.name)} ${fav ? "from" : "to"} favorites">★</button>
     <div class="sprite-box">${imageTag(p.id, p.name, { shiny, icon: true })}</div>
     <div class="pokemon-card-copy"><h3>${escapeHtml(p.name)}</h3><div class="type-row">${typeBadges(p.types)}</div></div>
-    <div class="pokemon-card-foot" ${allMethods.length ? `title="${escapeHtml(allMethods.join(", "))}" aria-label="Wild methods: ${escapeHtml(allMethods.join(", "))}"` : ""}>${methods.length ? methods.map(method => `<span>${escapeHtml(method)}</span>`).join("") + (extraMethods ? `<span>+${extraMethods}</span>` : "") : '<span>No wild route</span>'}</div>
+    <div class="pokemon-card-foot" ${allCategories.length ? `title="${escapeHtml(allCategories.join(", "))}" aria-label="Encounter categories: ${escapeHtml(allCategories.join(", "))}"` : ""}>${categories.length ? categories.map(category => `<span>${escapeHtml(category)}</span>`).join("") + (extraCategories ? `<span>+${extraCategories}</span>` : "") : '<span>No wild route</span>'}</div>
   </article>`;
 }
 
@@ -572,11 +587,11 @@ function renderHome() {
   bindCommonClicks();
 }
 
-function dexAvailabilityMatches(pokemon, method, season, time) {
-  if (method === "All" && season === "All" && time === "All") return true;
-  const availabilityByMethod = pokemon.methodAvailability || {};
-  const methods = method === "All" ? Object.keys(availabilityByMethod) : [method];
-  return methods.some(methodName => (availabilityByMethod[methodName] || []).some(pair =>
+function dexCategoryAvailabilityMatches(pokemon, category, season, time) {
+  if (category === "All" && season === "All" && time === "All") return true;
+  const availabilityByCategory = pokemon.categoryAvailability || {};
+  const categories = category === "All" ? Object.keys(availabilityByCategory) : [category];
+  return categories.some(categoryName => (availabilityByCategory[categoryName] || []).some(pair =>
     (season === "All" || pair.season === season || pair.season === "Any") &&
     (time === "All" || pair.time === time)
   ));
@@ -587,8 +602,8 @@ function filterPokemon() {
   const q = f.query.trim().toLowerCase();
   return state.pokemon.filter(p => {
     if (q && !p.name.toLowerCase().includes(q) && !String(p.id).includes(q.replace(/^#/, ""))) return false;
-    if (f.method !== "All" && !(p.methods || []).includes(f.method)) return false;
-    if (!dexAvailabilityMatches(p, f.method, f.season, f.time)) return false;
+    if (f.category !== "All" && !(p.dexCategories || []).includes(f.category)) return false;
+    if (!dexCategoryAvailabilityMatches(p, f.category, f.season, f.time)) return false;
     if (f.generation !== "All" && generationFor(p.id) !== Number(f.generation)) return false;
     if (f.availability === "Obtainable" && !p.obtainable) return false;
     if (f.availability === "Wild" && !p.hasLocations) return false;
@@ -599,8 +614,13 @@ function filterPokemon() {
 function renderDex() {
   setActiveNav("dex");
   setPageTitle("Pokédex");
-  const methodOrder = new Map(state.methods.map((m, i) => [m.id, i]));
-  const methods = [...new Set(state.pokemon.flatMap(p => p.methods || []))].sort((a,b)=>(methodOrder.get(a)??99)-(methodOrder.get(b)??99)||a.localeCompare(b));
+  const categoryGroups = new Map();
+  state.dexCategories.forEach(row => {
+    const group = row.group || "Encounter categories";
+    if (!categoryGroups.has(group)) categoryGroups.set(group, []);
+    categoryGroups.get(group).push(row);
+  });
+  const categoryOptions = [...categoryGroups.entries()].map(([group, rows]) => `<optgroup label="${escapeHtml(group)}">${rows.map(row => `<option value="${escapeHtml(row.id)}" ${row.id===state.dexFilters.category?"selected":""}>${escapeHtml(row.label || row.id)}</option>`).join("")}</optgroup>`).join("");
   const filtered = filterPokemon();
   const visible = filtered.slice(0, state.dexPage * 40);
   $("#app").innerHTML = `<section>
@@ -609,7 +629,7 @@ function renderDex() {
     </div>
     <div class="toolbar dex-toolbar">
       <div class="field dex-search-field"><label>Search</label><input id="dex-query" value="${escapeHtml(state.dexFilters.query)}" placeholder="Name or number"></div>
-      <div class="field"><label>Hunt method</label><select id="dex-method"><option>All</option>${methods.map(m => `<option ${m===state.dexFilters.method?"selected":""}>${escapeHtml(m)}</option>`).join("")}</select></div>
+      <div class="field"><label>Encounter category</label><select id="dex-category"><option>All</option>${categoryOptions}</select></div>
       <div class="field"><label>Season</label><select id="dex-season">${["All","Spring","Summer","Autumn","Winter"].map(x=>`<option ${x===state.dexFilters.season?"selected":""}>${x}</option>`).join("")}</select></div>
       <div class="field"><label>Time</label><select id="dex-time">${["All","Morning","Day","Night"].map(x=>`<option ${x===state.dexFilters.time?"selected":""}>${x}</option>`).join("")}</select></div>
       <div class="field"><label>Generation</label><select id="dex-gen"><option>All</option>${[1,2,3,4,5].map(g => `<option value="${g}" ${String(g)===String(state.dexFilters.generation)?"selected":""}>Gen ${g}</option>`).join("")}</select></div>
@@ -628,12 +648,12 @@ function renderDex() {
     });
   };
   $("#dex-query").addEventListener("input", e => { state.dexFilters.query = e.target.value; update(true); });
-  $("#dex-method").addEventListener("change", e => { state.dexFilters.method = e.target.value; update(); });
+  $("#dex-category").addEventListener("change", e => { state.dexFilters.category = e.target.value; update(); });
   $("#dex-season").addEventListener("change", e => { state.dexFilters.season = e.target.value; update(); });
   $("#dex-time").addEventListener("change", e => { state.dexFilters.time = e.target.value; update(); });
   $("#dex-gen").addEventListener("change", e => { state.dexFilters.generation = e.target.value; update(); });
   $("#dex-availability").addEventListener("change", e => { state.dexFilters.availability = e.target.value; update(); });
-  $("#dex-reset").addEventListener("click", () => { state.dexFilters = { query:"", method:"All", season:"All", time:"All", generation:"All", availability:"Obtainable" }; update(); });
+  $("#dex-reset").addEventListener("click", () => { state.dexFilters = { query:"", category:"All", season:"All", time:"All", generation:"All", availability:"Obtainable" }; update(); });
   $("#load-more")?.addEventListener("click", () => { state.dexPage++; renderDex(); });
   $("#dex-shiny").addEventListener("click", () => { const s=settings(); s.shinySprites=!s.shinySprites; saveJSON(STORAGE.settings,s); renderDex(); });
   bindPokemonCards();
@@ -693,6 +713,7 @@ async function renderPokemon(id) {
           <div><span>Wild encounter methods</span><small>${orderedMethods(p.methods || []).length ? "Available methods in the current Pokédex dump." : "No wild encounter method is listed."}</small></div>
           <div class="method-chip-list">${orderedMethods(p.methods || []).length ? orderedMethods(p.methods || []).map(method => `<span class="method-chip">${escapeHtml(method)}</span>`).join("") : '<span class="method-chip muted">Not obtainable in the wild</span>'}</div>
         </div>
+        ${(p.wildSelfHarmRisks || []).length ? `<div class="detail-risk-summary">${selfHarmWarning(p.wildSelfHarmRisks)}<div><strong>Potential wild self-KO or HP-loss risk</strong><small>${escapeHtml(selfHarmRiskText(p.wildSelfHarmRisks))} Exact moves depend on the encounter level.</small></div></div>` : ""}
       </div>
     </div>
     <div class="detail-layout">
@@ -792,7 +813,10 @@ function huntPhasePreview(hunt, targetIds = [], { prominent = false } = {}) {
   const phaseLink = component => {
     const isTarget = targets.has(Number(component.pokemonId));
     const title = `${component.name}${isTarget ? " · target" : ""} · ${formatPercent(component.share)} of Pokémon shown`;
-    return `<a class="phase-preview-mon ${isTarget ? "target" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
+    const risks = component.selfHarmRisks || [];
+    const riskText = risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : "";
+    const fullTitle = title + riskText;
+    return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
   };
   if (allTargets) {
     return `<div class="hunt-phase-preview pure-target ${prominent ? "prominent" : ""}">
@@ -854,7 +878,9 @@ async function openEncounterSplit(h, targetIds = []) {
     const isTarget = targetIdSet.has(Number(component.pokemonId));
     const speciesEph = speed * Number(component.share || 0);
     const slow = component.slowAbilities || [];
+    const risks = component.selfHarmRisks || [];
     const slowMarker = slow.length ? `<span class="slowdown-marker" title="May add a start-of-battle ability animation/message: ${escapeHtml(slow.join(", "))}"><img src="assets/icons/encounter-slowdown.png" alt="Start-of-battle slowdown warning"><span>${escapeHtml(slow.join(" / "))}</span></span>` : "";
+    const riskMarker = risks.length ? selfHarmWarning(risks,{compact:true}) : "";
     const safari = component.safariCapture;
     const safariHtml = safari ? `<div class="split-safari"><strong>${formatPercent(safari.ballsOnlySuccess)}</strong> balls-only catch estimate<br><small>${formatPercent(safari.fleePerTurn)} flee chance after a failed ball · ${escapeHtml(safari.scope)}</small></div>` : table.safari ? `<div class="split-safari unknown"><strong>Unknown catch estimate</strong><br><small>No matched community flee-rate entry for this region.</small></div>` : "";
     const sources = component.sources || [];
@@ -874,7 +900,7 @@ async function openEncounterSplit(h, targetIds = []) {
     }).join("")}</div>` : "";
     const rollLabel = table.method.includes("Horde") ? "of Sweet Scent rolls" : "of encounter rolls";
     return `<article class="split-species ${isTarget ? "target-species" : ""}">
-      <div class="split-sprite">${imageTag(component.pokemonId, component.name, {icon:true})}${slowMarker}</div>
+      <div class="split-sprite">${imageTag(component.pokemonId, component.name, {icon:true})}${slowMarker}${riskMarker}</div>
       <div class="split-species-main"><div class="split-species-title"><a href="#pokemon/${component.pokemonId}">${escapeHtml(component.name)}</a>${isTarget ? `<span class="target-label">${targetIdSet.size > 1 ? "Target line" : "Target"}</span>` : ""}</div>
         <div class="split-metrics">
           <span><strong>${formatPercent(methodRollChance, 1)}</strong> ${rollLabel} contain ${escapeHtml(component.name)}</span>
@@ -887,6 +913,8 @@ async function openEncounterSplit(h, targetIds = []) {
   const safariNote = table.safari ? `<div class="split-source"><strong>Safari estimates:</strong> balls-only calculations from ProfessorRex/HGSS-Safari-Zone. Applied to Johto Safari and Sinnoh Great Marsh where a species match exists; Kanto and Hoenn remain unadjusted.</div>` : "";
   const affectedSlowdowns = table.components.filter(component => (component.slowAbilities || []).length);
   const slowdownLegend = affectedSlowdowns.length ? `<div class="slowdown-legend"><img src="assets/icons/encounter-slowdown.png" alt=""><span><strong>${affectedSlowdowns.length} ${affectedSlowdowns.length === 1 ? "species has" : "species have"} a possible start-of-battle delay.</strong> The red arrow is shown only on affected Pokémon; hover it to see the relevant ${affectedSlowdowns.length === 1 ? "ability" : "abilities"}.</span></div>` : "";
+  const affectedRisks = table.components.filter(component => (component.selfHarmRisks || []).length);
+  const riskLegend = affectedRisks.length ? `<div class="wild-risk-legend"><span aria-hidden="true">⚠</span><span><strong>${affectedRisks.length} ${affectedRisks.length === 1 ? "species has" : "species have"} a potential self-KO or HP-loss risk at these levels.</strong> Hover the warning icon for the exact move or ability.</span></div>` : "";
   const isSweetScent = table.method.includes("Horde");
   const rawLabel = isSweetScent ? "Raw Dex horde block" : "Encounter outcome table";
   const shownSummary = table.containsRandomHordes ? `<span>Avg. ${formatNumber(Number(table.shownTableTotal || 1), 2)} Pokémon shown / encounter roll</span>` : "";
@@ -899,7 +927,7 @@ async function openEncounterSplit(h, targetIds = []) {
   content.innerHTML = `<div class="split-head"><div><span class="eyebrow">Full encounter split</span><h2>${escapeHtml(table.location)}</h2><p><strong>${escapeHtml(table.method)}</strong> · ${escapeHtml(table.region)} · ${escapeHtml(table.encounterType)}</p></div><div class="split-speed"><strong>${formatNumber(speed,0)}/hr</strong><small>Pokémon shown</small></div></div>
     <div class="availability-feature">${availabilityVisual(h.availability)}</div>
     <div class="split-summary"><span>${rawLabel}: ${formatPercent(table.rawTableTotal, table.rawTableTotal < .1 ? 1 : 0)}</span>${isSweetScent ? '<span>Sweet Scent table: 100%</span>' : ''}${shownSummary}<span>${escapeHtml(table.confidence)} confidence</span><span>${table.components.length} species</span></div>
-    ${slowdownLegend}
+    ${slowdownLegend}${riskLegend}
     <div class="split-list">${rows}</div>
     ${calculationNotes}`;
   $$('a[href^="#pokemon/"]', content).forEach(link => link.addEventListener('click', () => dialog.close()));
@@ -1093,7 +1121,7 @@ function routeOption(row) {
 function routeSpeciesPreview(table) {
   if (!table?.components?.length) return "";
   const components = table.components.slice(0, 4);
-  return `<div class="route-species-preview">${components.map(component => `<span title="${escapeHtml(component.name)} · ${formatPercent(component.share)}">${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
+  return `<div class="route-species-preview">${components.map(component => { const risks=component.selfHarmRisks||[]; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
 }
 
 async function renderRouteSearcher() {
@@ -1247,7 +1275,7 @@ function renderAbout() {
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
     <div class="about-simple-grid">
       <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits and route comparisons by method, season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
-      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>Only normal wild ability slots are used for start-of-battle slowdown warnings; hidden abilities are excluded. Known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
+      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure-exclusive lists only the special Lure slot, Safari lists species found under Safari rules, and horde categories distinguish pure 100% hordes from split tables.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
       <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
 }
@@ -1290,8 +1318,8 @@ async function renderRoute() {
 
 async function init() {
   try {
-    [state.pokemon, state.methods, state.buildInfo] = await Promise.all([
-      fetchJSON("data/index.json"), fetchJSON("data/methods.json"), fetchJSON("data/build-info.json")
+    [state.pokemon, state.methods, state.dexCategories, state.buildInfo] = await Promise.all([
+      fetchJSON("data/index.json"), fetchJSON("data/methods.json"), fetchJSON("data/dex-categories.json"), fetchJSON("data/build-info.json")
     ]);
     state.pokemonById = new Map(state.pokemon.map(p=>[p.id,p]));
     $("#pokemon-list").innerHTML = state.pokemon.map(p=>`<option value="${escapeHtml(p.name)}">#${String(p.id).padStart(3,"0")}</option>`).join("");

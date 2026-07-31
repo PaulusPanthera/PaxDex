@@ -1,3 +1,14 @@
+# PaxDex v0.18
+
+- Replaced the Pokédex Hunt Method filter with user-facing encounter categories.
+- Lure-exclusive now shows only Pokémon occupying a Lure-exclusive slot; Safari shows Pokémon found under Safari rules.
+- Split Sweet Scent filters into 100% and mixed 5×/3× horde tables.
+- Added wild danger warnings for self-KO, recoil, crash-damage, perish-count, confusion and conditional HP-loss risks.
+- Danger warnings use the actual four level-up moves available at each generated encounter level, plus normal wild ability slots; hidden abilities remain excluded.
+- Added warning markers to Pokédex cards, Pokémon entries, hunt encounter pools, Route Searcher previews and full encounter splits.
+- Grouped the new Pokédex categories into Special pools, Sweet Scent hordes and Other encounters.
+- Rebuilt and validated all 649 Pokémon, 58,370 hunt options and 12,398 encounter tables.
+
 # PaxDex v0.17
 
 - Redesigned hunt-card phase previews as a larger, integrated **Encounter pool**.

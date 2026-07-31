@@ -37,6 +37,28 @@ def has_invalid_dump_decoration(value: object) -> bool:
     return first_ascii not in (None, 0)
 
 
+def semantic_categories_for(pid: int, hunt: dict, table: dict) -> list[str]:
+    component = next((row for row in table.get("components", []) if int(row.get("pokemonId", -1)) == pid), None)
+    if component is None:
+        return []
+    source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
+    method = str(hunt.get("method", ""))
+    categories: list[str] = []
+    if "lure" in source_kinds:
+        categories.append("Lure-exclusive")
+    if hunt.get("safari"):
+        categories.append("Safari")
+    if method in {"5× Horde", "3× Horde"}:
+        pure = len(table.get("components", [])) == 1 and abs(float(component.get("share", 0)) - 1.0) <= 0.000001
+        categories.append(f"{method} · {'100%' if pure else 'Split'}")
+    elif method in {"Singles", "Surfing"}:
+        if "single" in source_kinds:
+            categories.append(method)
+    elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
+        categories.append(method)
+    return categories
+
+
 def main() -> int:
     errors: list[str] = []
     warnings: list[str] = []
@@ -44,6 +66,7 @@ def main() -> int:
     try:
         index = load(ROOT / "data" / "index.json")
         methods = load(ROOT / "data" / "methods.json")
+        dex_categories = load(ROOT / "data" / "dex-categories.json")
         build_info = load(ROOT / "data" / "build-info.json")
         encounter_tables = load(ROOT / "data" / "encounter-tables.json")
         phase_previews = load(ROOT / "data" / "phase-previews.json")
@@ -76,6 +99,12 @@ def main() -> int:
 
     method_ids = {m["id"] for m in methods}
     method_defaults = {m["id"]: float(m.get("defaultEph", 0)) for m in methods}
+    category_ids = [row.get("id") for row in dex_categories]
+    if len(category_ids) != len(set(category_ids)) or not all(category_ids):
+        errors.append("Pokédex encounter categories contain duplicate or empty IDs.")
+    required_categories = {"Lure-exclusive", "Safari", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing"}
+    if not required_categories.issubset(set(category_ids)):
+        errors.append("Pokédex encounter categories are missing required semantic filters.")
     if method_defaults.get("5× Horde") != 1200:
         errors.append("Default 5× Horde speed must be 1,200 encounters/hour.")
     if method_defaults.get("3× Horde") != 720:
@@ -101,11 +130,11 @@ def main() -> int:
         if len(ids_in_table) != len(set(ids_in_table)):
             errors.append(f"Encounter table {table_id} contains duplicate Pokémon components.")
         expected_preview = [
-            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7))
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("selfHarmRisks", []))
             for c in components
         ]
         actual_preview = [
-            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7))
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("selfHarmRisks", []))
             for c in phase_previews.get(str(table_id), [])
         ]
         if actual_preview != expected_preview:
@@ -114,6 +143,14 @@ def main() -> int:
             for ability in component.get("slowAbilities", []):
                 if ability not in component.get("abilities", []):
                     errors.append(f"Encounter table {table_id} marks unknown slowdown ability {ability!r}.")
+            risk_keys = set()
+            for risk in component.get("selfHarmRisks", []):
+                key = (risk.get("kind"), risk.get("name"))
+                if key in risk_keys:
+                    errors.append(f"Encounter table {table_id} contains duplicate wild risk {key!r}.")
+                risk_keys.add(key)
+                if risk.get("kind") not in {"move", "ability"} or not risk.get("name") or not risk.get("description"):
+                    errors.append(f"Encounter table {table_id} contains an invalid wild risk entry: {risk!r}.")
             capture = component.get("safariCapture")
             if capture and not (0 < float(capture.get("ballsOnlySuccess", 0)) <= 1):
                 errors.append(f"Encounter table {table_id} has invalid Safari catch estimate.")
@@ -162,6 +199,15 @@ def main() -> int:
     )
     if not growlithe_slow:
         errors.append("Normal-ability slowdown regression failed: Growlithe Intimidate is not marked.")
+
+    voltorb_selfdestruct = any(
+        int(component.get("pokemonId", -1)) == 100 and any(risk.get("name") == "Selfdestruct" for risk in component.get("selfHarmRisks", []))
+        for table in encounter_tables.values()
+        for component in table.get("components", [])
+        if int(component.get("maxLevel", 0)) >= 28
+    )
+    if not voltorb_selfdestruct:
+        errors.append("Wild-risk regression failed: Voltorb Selfdestruct is not marked at applicable levels.")
 
     hunt_count = 0
     held_item_ids: set[int] = set()
@@ -220,6 +266,34 @@ def main() -> int:
                     errors.append(f"Compact availability for #{pid} {method} contains invalid {season!r}/{time!r}.")
             if actual_pairs != expected_availability.get(method, set()):
                 errors.append(f"Compact availability for #{pid} {method} does not match detailed hunts.")
+
+        expected_categories: dict[str, set[tuple[str, str]]] = {}
+        expected_risks: dict[tuple[str, str], dict] = {}
+        for hunt in hunts:
+            table = encounter_tables.get(str(hunt.get("tableId")), {})
+            component = next((row for row in table.get("components", []) if int(row.get("pokemonId", -1)) == pid), None)
+            for category in semantic_categories_for(pid, hunt, table):
+                expected_categories.setdefault(category, set()).update(
+                    (pair["season"], pair["time"]) for pair in hunt.get("availability", [])
+                )
+            if component:
+                for risk in component.get("selfHarmRisks", []):
+                    expected_risks[(str(risk.get("kind")), str(risk.get("name")))] = risk
+        listed_categories = p.get("dexCategories", [])
+        if set(listed_categories) != set(expected_categories):
+            errors.append(f"Semantic Pokédex categories for #{pid} do not match detailed encounter data.")
+        if any(category not in category_ids for category in listed_categories):
+            errors.append(f"Semantic Pokédex categories for #{pid} use an unknown category.")
+        compact_category_availability = p.get("categoryAvailability", {})
+        if set(compact_category_availability) != set(expected_categories):
+            errors.append(f"Category availability keys for #{pid} do not match its semantic categories.")
+        for category, pairs in compact_category_availability.items():
+            actual_pairs = {(pair.get("season"), pair.get("time")) for pair in pairs}
+            if actual_pairs != expected_categories.get(category, set()):
+                errors.append(f"Category availability for #{pid} {category} does not match detailed encounters.")
+        actual_risk_keys = {(str(risk.get("kind")), str(risk.get("name"))) for risk in p.get("wildSelfHarmRisks", [])}
+        if actual_risk_keys != set(expected_risks):
+            errors.append(f"Compact wild-risk summary for #{pid} does not match encounter components.")
 
         for folder in ("normal", "shiny", "icons", "icons-shiny"):
             if not (ROOT / "sprites" / folder / f"{pid}.png").exists():

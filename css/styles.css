@@ -1463,3 +1463,105 @@ html[data-theme="dark"] .best-hunt .phase-preview-pure-copy small { color:#eadca
     padding-bottom:4px;
   }
 }
+
+/* v0.18 semantic Pokédex filters and wild encounter danger markers */
+.wild-risk-marker {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:25px;
+  padding:3px 7px;
+  color:#6f160f;
+  background:#ffe1d8;
+  border:2px solid #c3402f;
+  box-shadow:2px 2px 0 rgba(69,19,13,.25);
+  font-size:.66rem;
+  font-weight:900;
+  line-height:1;
+  cursor:help;
+  z-index:4;
+}
+.wild-risk-marker > span { color:#d83b27; font-size:.95rem; line-height:1; }
+.wild-risk-marker.compact {
+  width:24px;
+  min-width:24px;
+  height:24px;
+  min-height:24px;
+  justify-content:center;
+  padding:0;
+  border-width:2px;
+  border-radius:2px;
+}
+.wild-risk-marker.compact > span { font-size:.86rem; }
+.detail-risk-summary {
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  margin-top:12px;
+  padding:11px 12px;
+  color:#6f160f;
+  background:#fff0e8;
+  border:2px solid #c3402f;
+}
+.detail-risk-summary > div { min-width:0; }
+.detail-risk-summary strong,
+.detail-risk-summary small { display:block; }
+.detail-risk-summary strong { font-size:.82rem; }
+.detail-risk-summary small { margin-top:3px; color:#783b32; font-size:.7rem; line-height:1.45; }
+.phase-preview-mon,
+.route-species-preview > span { position:relative; }
+.phase-preview-mon > .wild-risk-marker,
+.route-species-preview > span > .wild-risk-marker {
+  position:absolute;
+  top:-5px;
+  right:-5px;
+}
+.split-sprite > .wild-risk-marker {
+  position:absolute;
+  top:1px;
+  right:1px;
+}
+.wild-risk-legend {
+  display:flex;
+  gap:10px;
+  align-items:center;
+  margin:12px 0 16px;
+  padding:10px 12px;
+  color:#6f160f;
+  background:#fff0e8;
+  border:2px solid #c3402f;
+  font-size:.8rem;
+  font-weight:800;
+  line-height:1.4;
+}
+.wild-risk-legend > span:first-child {
+  display:grid;
+  place-items:center;
+  flex:0 0 28px;
+  width:28px;
+  height:28px;
+  color:#fff;
+  background:#c3402f;
+  border:2px solid #6f160f;
+  font-size:1rem;
+}
+html[data-theme="dark"] .wild-risk-marker {
+  color:#ffe5dd;
+  background:#552a23;
+  border-color:#ed7967;
+  box-shadow:2px 2px 0 #160b08;
+}
+html[data-theme="dark"] .wild-risk-marker > span { color:#ff8a75; }
+html[data-theme="dark"] .detail-risk-summary,
+html[data-theme="dark"] .wild-risk-legend {
+  color:#ffe5dd;
+  background:#47241f;
+  border-color:#ed7967;
+}
+html[data-theme="dark"] .detail-risk-summary small { color:#f2c5bc; }
+html[data-theme="dark"] .wild-risk-legend > span:first-child { border-color:#ffd2c9; }
+@media (max-width: 620px) {
+  .detail-risk-summary { align-items:flex-start; }
+  .wild-risk-marker:not(.compact) b { display:none; }
+  .wild-risk-marker:not(.compact) { min-width:31px; justify-content:center; }
+}

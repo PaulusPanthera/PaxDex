@@ -70,6 +70,92 @@ START_DELAY_ABILITIES = {
     "Snow Warning", "Air Lock", "Cloud Nine", "Slow Start", "Imposter",
 }
 
+DEX_CATEGORY_DEFS = [
+    {"id": "Lure-exclusive", "label": "Lure-exclusive", "group": "Special pools"},
+    {"id": "Safari", "label": "Safari", "group": "Special pools"},
+    {"id": "5× Horde · 100%", "label": "5× Horde · 100%", "group": "Sweet Scent hordes"},
+    {"id": "5× Horde · Split", "label": "5× Horde · Split", "group": "Sweet Scent hordes"},
+    {"id": "3× Horde · 100%", "label": "3× Horde · 100%", "group": "Sweet Scent hordes"},
+    {"id": "3× Horde · Split", "label": "3× Horde · Split", "group": "Sweet Scent hordes"},
+    {"id": "Singles", "label": "Singles", "group": "Other encounters"},
+    {"id": "Surfing", "label": "Surfing", "group": "Other encounters"},
+    {"id": "Fishing", "label": "Fishing", "group": "Other encounters"},
+    {"id": "Rock Smash", "label": "Rock Smash", "group": "Other encounters"},
+    {"id": "Headbutt", "label": "Headbutt", "group": "Other encounters"},
+    {"id": "Honey Tree", "label": "Honey Tree", "group": "Other encounters"},
+    {"id": "Special", "label": "Special", "group": "Other encounters"},
+]
+DEX_CATEGORY_ORDER = {row["id"]: index for index, row in enumerate(DEX_CATEGORY_DEFS)}
+
+# Moves are checked against the actual four level-up moves a wild Pokémon can
+# know at each generated encounter level. The warning is deliberately broader
+# than instant self-KO: recoil, crash damage and delayed self-KO are also useful
+# shiny-hunting hazards.
+SELF_HARM_MOVE_RULES = {
+    "Selfdestruct": ("self-ko", "The user faints immediately."),
+    "Explosion": ("self-ko", "The user faints immediately."),
+    "Memento": ("self-ko", "The user faints immediately."),
+    "Final Gambit": ("self-ko", "The user faints immediately."),
+    "Healing Wish": ("self-ko", "The user faints immediately."),
+    "Lunar Dance": ("self-ko", "The user faints immediately."),
+    "Perish Song": ("countdown", "The user can faint when the perish count reaches zero."),
+    "Take Down": ("recoil", "The user takes recoil damage."),
+    "Double-Edge": ("recoil", "The user takes recoil damage."),
+    "Submission": ("recoil", "The user takes recoil damage."),
+    "Brave Bird": ("recoil", "The user takes recoil damage."),
+    "Flare Blitz": ("recoil", "The user takes recoil damage."),
+    "Head Smash": ("recoil", "The user takes heavy recoil damage."),
+    "Volt Tackle": ("recoil", "The user takes recoil damage."),
+    "Wood Hammer": ("recoil", "The user takes recoil damage."),
+    "Wild Charge": ("recoil", "The user takes recoil damage."),
+    "Head Charge": ("recoil", "The user takes recoil damage."),
+    "Jump Kick": ("crash", "The user takes crash damage if the move misses or fails."),
+    "Hi Jump Kick": ("crash", "The user takes crash damage if the move misses or fails."),
+    "Curse": ("hp-loss", "Ghost-type users sacrifice half of their maximum HP."),
+    "Thrash": ("confusion", "The user becomes confused after the locked attack ends."),
+    "Outrage": ("confusion", "The user becomes confused after the locked attack ends."),
+    "Petal Dance": ("confusion", "The user becomes confused after the locked attack ends."),
+}
+SELF_HARM_ABILITY_RULES = {
+    "Dry Skin": ("weather", "The Pokémon loses HP each turn in harsh sunlight."),
+    "Solar Power": ("weather", "The Pokémon loses HP each turn in harsh sunlight."),
+}
+
+
+def wild_moves_at_level(level_moves: list[dict[str, Any]], level: int) -> list[str]:
+    """Return the four level-up moves used by a wild Pokémon at a level."""
+    known: list[str] = []
+    for move in level_moves:
+        try:
+            learned_at = int(move.get("level", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if learned_at > level:
+            continue
+        name = str(move.get("name") or "").strip()
+        if not name:
+            continue
+        if name in known:
+            known.remove(name)
+        known.append(name)
+    return known[-4:]
+
+
+def compact_level_ranges(levels: set[int]) -> str:
+    if not levels:
+        return ""
+    ordered = sorted(levels)
+    ranges: list[str] = []
+    start = previous = ordered[0]
+    for level in ordered[1:]:
+        if level == previous + 1:
+            previous = level
+            continue
+        ranges.append(str(start) if start == previous else f"{start}–{previous}")
+        start = previous = level
+    ranges.append(str(start) if start == previous else f"{start}–{previous}")
+    return ", ".join(ranges)
+
 
 def parse_rate(value: Any) -> tuple[str, float]:
     if value is None:
@@ -263,13 +349,17 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     index: list[dict[str, Any]] = []
     abilities_by_pid: dict[int, list[str]] = {}
+    wild_abilities_by_pid: dict[int, list[str]] = {}
     slow_abilities_by_pid: dict[int, list[str]] = {}
+    level_moves_by_pid: dict[int, list[dict[str, Any]]] = {}
+    types_by_pid: dict[int, list[str]] = {}
     for pid, mon in monsters.items():
         types = []
         for t in mon.get("types", []):
             normalized = str(t).title() if t else ""
             if normalized and normalized not in types:
                 types.append(normalized)
+        types_by_pid[pid] = types
         forms = [f for f in mon.get("forms", []) if f.get("is_released", True)]
         evolution_line = evo_lines.get(pid, [pid])
         index.append({
@@ -300,19 +390,25 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             name = ability.get("name")
             if name and name != "-" and name not in wild_ability_names:
                 wild_ability_names.append(name)
+        wild_abilities_by_pid[pid] = wild_ability_names
         slow_abilities_by_pid[pid] = [x for x in wild_ability_names if x in START_DELAY_ABILITIES]
 
         moves_by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        level_moves: list[dict[str, Any]] = []
         seen_moves: set[tuple] = set()
         for move in mon.get("moves", []):
             entry = {"id": move.get("id"), "name": move.get("name"), "type": str(move.get("type", "Other"))}
             if "level" in move:
                 entry["level"] = move.get("level")
+            if str(entry["type"]).lower() == "level":
+                level_moves.append(entry.copy())
             sig = (entry["id"], entry["type"], entry.get("level"))
             if sig in seen_moves:
                 continue
             seen_moves.add(sig)
             moves_by_type[entry["type"]].append(entry)
+
+        level_moves_by_pid[pid] = level_moves
 
         detail = {
             "id": pid,
@@ -344,7 +440,35 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         }
         safe_json(data_dir / "pokemon" / f"{pid}.json", detail)
 
-    # Hunt methods are appended to the compact index after encounter data is built.
+    def self_harm_risks_for(pid: int, min_level: int, max_level: int) -> list[dict[str, Any]]:
+        risks: list[dict[str, Any]] = []
+        move_levels: dict[str, set[int]] = defaultdict(set)
+        if min_level > 0 and max_level >= min_level:
+            for level in range(min_level, max_level + 1):
+                for move_name in wild_moves_at_level(level_moves_by_pid.get(pid, []), level):
+                    if move_name not in SELF_HARM_MOVE_RULES:
+                        continue
+                    if move_name == "Curse" and "Ghost" not in types_by_pid.get(pid, []):
+                        continue
+                    move_levels[move_name].add(level)
+        for move_name, levels in sorted(move_levels.items(), key=lambda row: (min(row[1]), row[0])):
+            risk_type, description = SELF_HARM_MOVE_RULES[move_name]
+            risks.append({
+                "kind": "move", "name": move_name, "riskType": risk_type,
+                "description": description, "levels": compact_level_ranges(levels),
+            })
+        for ability_name in wild_abilities_by_pid.get(pid, []):
+            if ability_name not in SELF_HARM_ABILITY_RULES:
+                continue
+            risk_type, description = SELF_HARM_ABILITY_RULES[ability_name]
+            risks.append({
+                "kind": "ability", "name": ability_name, "riskType": risk_type,
+                "description": description, "levels": "",
+            })
+        return risks
+
+    # Hunt methods and user-facing encounter categories are appended to the compact
+    # index after encounter data is built.
 
     # Encounter tables from the dump.
     normal_tables: dict[tuple, dict[int, dict[str, Any]]] = defaultdict(dict)
@@ -452,6 +576,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "maxLevel": row["maxLevel"],
                 "abilities": abilities_by_pid.get(pid, []),
                 "slowAbilities": slow_abilities_by_pid.get(pid, []),
+                "selfHarmRisks": self_harm_risks_for(pid, row["minLevel"], row["maxLevel"]),
                 "safariCapture": capture,
                 "sources": row.get("sources", []),
             })
@@ -679,10 +804,37 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             add_contribution(weighted, pid, row, event_rate, size, "sweet-scent", label)
         add_table_options(weighted, f"{size}× Horde", horde=True, raw_event_total=raw_event_total)
 
+    def dex_categories_for_option(pid: int, opt: dict[str, Any]) -> list[str]:
+        table = encounter_tables.get(str(opt.get("tableId")), {})
+        component = next((row for row in table.get("components", []) if int(row.get("pokemonId", -1)) == pid), None)
+        if component is None:
+            return []
+        source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
+        method = str(opt.get("method", ""))
+        categories: list[str] = []
+        if "lure" in source_kinds:
+            categories.append("Lure-exclusive")
+        if bool(opt.get("safari")):
+            categories.append("Safari")
+        if method in {"5× Horde", "3× Horde"}:
+            pure = len(table.get("components", [])) == 1 and abs(float(component.get("share", 0)) - 1.0) <= 0.000001
+            categories.append(f"{method} · {'100%' if pure else 'Split'}")
+        elif method in {"Singles", "Surfing"}:
+            # Species that only occur through a natural horde inside the walking/
+            # surfing table are not labelled as ordinary single encounters.
+            if "single" in source_kinds:
+                categories.append(method)
+        elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
+            categories.append(method)
+        return categories
+
     # Collapse repeated availability only when the entire encounter split is identical.
     hunt_count = 0
     methods_by_pid: dict[int, set[str]] = defaultdict(set)
     availability_by_pid: dict[int, dict[str, set[tuple[str, str]]]] = defaultdict(lambda: defaultdict(set))
+    dex_categories_by_pid: dict[int, set[str]] = defaultdict(set)
+    category_availability_by_pid: dict[int, dict[str, set[tuple[str, str]]]] = defaultdict(lambda: defaultdict(set))
+    self_harm_summary_by_pid: dict[int, dict[tuple[str, str], dict[str, Any]]] = defaultdict(dict)
     route_index_by_table: dict[str, dict[str, Any]] = {}
     for pid in monsters:
         grouped: dict[tuple, dict[str, Any]] = {}
@@ -709,8 +861,24 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         hunt_count += len(collapsed)
         for opt in collapsed:
             methods_by_pid[pid].add(opt["method"])
+            categories = dex_categories_for_option(pid, opt)
+            table_component = next(
+                (row for row in encounter_tables[str(opt["tableId"])].get("components", []) if int(row.get("pokemonId", -1)) == pid),
+                None,
+            )
+            if table_component:
+                for risk in table_component.get("selfHarmRisks", []):
+                    risk_key = (str(risk.get("kind", "")), str(risk.get("name", "")))
+                    self_harm_summary_by_pid[pid][risk_key] = {
+                        "kind": risk.get("kind"), "name": risk.get("name"),
+                        "riskType": risk.get("riskType"), "description": risk.get("description"),
+                    }
             for availability in opt["availability"]:
-                availability_by_pid[pid][opt["method"]].add((availability["season"], availability["time"]))
+                pair = (availability["season"], availability["time"])
+                availability_by_pid[pid][opt["method"]].add(pair)
+                for category in categories:
+                    dex_categories_by_pid[pid].add(category)
+                    category_availability_by_pid[pid][category].add(pair)
             route_row = route_index_by_table.setdefault(str(opt["tableId"]), {
                 "tableId": str(opt["tableId"]), "region": opt["region"], "locationId": opt["locationId"],
                 "location": opt["location"], "encounterType": opt["encounterType"], "method": opt["method"],
@@ -734,6 +902,27 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             ]
             for method, pairs in sorted(availability_by_pid.get(pid, {}).items())
         }
+        entry["dexCategories"] = sorted(
+            dex_categories_by_pid.get(pid, set()),
+            key=lambda category: (DEX_CATEGORY_ORDER.get(category, 999), category),
+        )
+        entry["categoryAvailability"] = {
+            category: [
+                {"season": season, "time": time}
+                for season, time in sorted(
+                    pairs,
+                    key=lambda pair: (season_order.get(pair[0], 99), time_order.get(pair[1], 99)),
+                )
+            ]
+            for category, pairs in sorted(
+                category_availability_by_pid.get(pid, {}).items(),
+                key=lambda row: (DEX_CATEGORY_ORDER.get(row[0], 999), row[0]),
+            )
+        }
+        entry["wildSelfHarmRisks"] = sorted(
+            self_harm_summary_by_pid.get(pid, {}).values(),
+            key=lambda risk: (risk.get("kind") != "move", risk.get("name", "")),
+        )
     safe_json(data_dir / "index.json", index)
     route_index = list(route_index_by_table.values())
     for row in route_index:
@@ -747,6 +936,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "pokemonId": int(component["pokemonId"]),
                 "name": component["name"],
                 "share": round(float(component["share"]), 7),
+                "selfHarmRisks": component.get("selfHarmRisks", []),
             }
             for component in table.get("components", [])
         ]
@@ -768,11 +958,12 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         {"id": "Special", "label": "Special", "defaultEph": 0},
     ]
     safe_json(data_dir / "methods.json", methods)
+    safe_json(data_dir / "dex-categories.json", DEX_CATEGORY_DEFS)
 
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.17",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.18",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary
