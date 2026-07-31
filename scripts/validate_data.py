@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VALID_SEASONS = {"Any", "Spring", "Summer", "Autumn", "Winter"}
 VALID_TIMES = {"Morning", "Day", "Night"}
 VALID_REGIONS = {"Kanto", "Hoenn", "Unova", "Sinnoh", "Johto"}
-VALID_ENCOUNTER_TYPES = {"Grass", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
+VALID_ENCOUNTER_TYPES = {"Grass", "Land", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
 REQUIRED_HUNT_KEYS = {
     "region", "location", "encounterType", "method", "share", "minLevel",
     "maxLevel", "confidence", "note", "availability", "tableId"
@@ -19,6 +19,20 @@ FOSSIL_SPECIES = {
     345, 346, 347, 348,
     408, 409, 410, 411,
     564, 565, 566, 567,
+}
+
+JOHTO_SAFARI_AREAS = {
+    343: "Plains", 344: "Meadow", 345: "Savannah", 346: "Peak",
+    347: "Rocky Beach", 348: "Wetland", 349: "Forest", 350: "Swamp",
+    351: "Marshland", 352: "Wasteland", 353: "Mountain", 354: "Desert",
+}
+HOENN_SAFARI_LABELS = {
+    844: "Safari Zone — South Area (Area 1)",
+    588: "Safari Zone — Southwest Area (Area 2)",
+    76: "Safari Zone — Northwest Area (Area 3)",
+    332: "Safari Zone — North Area (Area 4)",
+    3404: "Safari Zone — Southeast Area (Area 5)",
+    3148: "Safari Zone — Northeast Area (Area 6)",
 }
 
 
@@ -149,6 +163,18 @@ def main() -> int:
             errors.append(f"Encounter table {table_id} has invalid region {table.get('region')!r}.")
         if table.get("encounterType") not in VALID_ENCOUNTER_TYPES:
             errors.append(f"Encounter table {table_id} has invalid encounter type {table.get('encounterType')!r}.")
+        if table.get("safari"):
+            if table.get("selfHarmWarningsApplicable") is not False:
+                errors.append(f"Safari encounter table {table_id} must suppress self-harm warnings in Safari contexts.")
+            pool = table.get("safariPool") or {}
+            if not pool.get("status") or not pool.get("label"):
+                errors.append(f"Safari encounter table {table_id} is missing source-coverage metadata.")
+            if table.get("region") == "Johto" and table.get("encounterType") == "Land":
+                if pool.get("status") != "partial" or abs(float(pool.get("documentedTotal", 0)) - 0.9) > 0.00001:
+                    errors.append(f"Johto Safari land table {table_id} must be labelled as a 90% documented base pool.")
+            if table.get("region") == "Sinnoh" and table.get("encounterType") == "Land":
+                if pool.get("status") != "partial" or abs(float(pool.get("documentedTotal", 0)) - 0.8) > 0.00001:
+                    errors.append(f"Sinnoh Great Marsh land table {table_id} must be labelled as an 80% documented base pool.")
         components = table.get("components", [])
         if not components:
             errors.append(f"Encounter table {table_id} has no components.")
@@ -425,6 +451,22 @@ def main() -> int:
     for n, row in enumerate(route_index, 1):
         if row.get("location") == "Safari Zone Gate" and (row.get("safari") or row.get("method") in {"Safari", "Lure Safari"}):
             errors.append(f"Route index row {n} incorrectly classifies Safari Zone Gate as Safari.")
+        if not row.get("safari"):
+            continue
+        if row.get("selfHarmWarningsApplicable") is not False:
+            errors.append(f"Safari route row {n} must suppress self-harm warnings.")
+        region = row.get("region")
+        location_id = int(row.get("locationId", 0) or 0)
+        if region == "Johto" and location_id in JOHTO_SAFARI_AREAS:
+            expected = f"Safari Zone — {JOHTO_SAFARI_AREAS[location_id]}"
+            if row.get("location") != expected:
+                errors.append(f"Johto Safari area mapping failed for location ID {location_id}: {row.get('location')!r}.")
+            if row.get("encounterType") == "Cave":
+                errors.append(f"Johto Safari location ID {location_id} still uses the dump-internal Cave label.")
+        if region == "Hoenn" and location_id in HOENN_SAFARI_LABELS and row.get("location") != HOENN_SAFARI_LABELS[location_id]:
+            errors.append(f"Hoenn Safari area numbering failed for location ID {location_id}: {row.get('location')!r}.")
+        if region == "Sinnoh" and row.get("encounterType") == "Inside":
+            errors.append(f"Sinnoh Great Marsh row {n} still uses the dump-internal Inside label.")
 
     if int(build_info.get("huntOptions", -1)) != hunt_count:
         errors.append(f"build-info hunt count is {build_info.get('huntOptions')}, generated files contain {hunt_count}.")
@@ -506,6 +548,9 @@ def main() -> int:
     print("- No control characters or decorated dump prefixes leaked into published labels")
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
+    print("- Safari self-harm warnings are suppressed while global Pokédex warnings remain available")
+    print("- Johto Safari biome names, Hoenn area numbers and Safari land labels are normalized")
+    print("- Johto 90% and Sinnoh 80% static land pools carry clear source-coverage metadata")
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")
     print("- Lure, globally Lure-exclusive, Special/phenomenon and Fossil Pokédex categories validated")
     print("- 100% horde species keep their labels but are excluded from the corresponding Split search")

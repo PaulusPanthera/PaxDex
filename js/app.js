@@ -224,6 +224,29 @@ function hoursLabel(hours) {
   return `${formatNumber(hours, hours < 10 ? 1 : 0)} h`;
 }
 function confidenceClass(c) { return `confidence-${String(c).toLowerCase()}`; }
+function safariPoolTitle(row = {}) {
+  const pool = row.safariPool;
+  if (!pool) return "";
+  const coverage = Number(pool.documentedTotal || 0);
+  const lureText = pool.lureModel ? " The Lure model is applied to this documented base pool." : "";
+  return `${pool.note || "Safari source coverage."}${lureText}${coverage ? ` Coverage: ${formatPercent(coverage, 0)}.` : ""}`;
+}
+function encounterQualityBadge(row = {}, { chip = false } = {}) {
+  const pool = row.safariPool;
+  if (pool?.status === "partial") {
+    const text = `${pool.label || "Base pool"} · ${formatPercent(Number(pool.documentedTotal || 0), 0)}`;
+    return `<span class="${chip ? "chip " : "confidence "}safari-pool-badge" title="${escapeHtml(safariPoolTitle(row))}">${escapeHtml(text)}</span>`;
+  }
+  return `<span class="${chip ? "chip " : "confidence "}${confidenceClass(row.confidence)}">${escapeHtml(row.confidence)} confidence</span>`;
+}
+function routeTableStatus(row = {}) {
+  const pool = row.safariPool;
+  if (pool?.status === "partial") {
+    const model = pool.lureModel ? " · Lure model" : "";
+    return `<span>${escapeHtml(pool.label || "Base pool")}${model}</span><span>${formatPercent(Number(pool.documentedTotal || 0), 0)} documented</span>`;
+  }
+  return `<span>${escapeHtml(row.confidence)} confidence</span><span>${row.containsRandomHordes ? "Includes natural horde roll" : `Raw ${formatPercent(row.rawTableTotal,row.rawTableTotal<.1?1:0)}`}</span>`;
+}
 
 async function fetchJSON(path) {
   const res = await fetch(path);
@@ -814,7 +837,7 @@ function huntPhasePreview(hunt, targetIds = [], { prominent = false } = {}) {
   const phaseLink = component => {
     const isTarget = targets.has(Number(component.pokemonId));
     const title = `${component.name}${isTarget ? " · target" : ""} · ${formatPercent(component.share)} of Pokémon shown`;
-    const risks = component.selfHarmRisks || [];
+    const risks = hunt.selfHarmWarningsApplicable === false ? [] : (component.selfHarmRisks || []);
     const riskText = risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : "";
     const fullTitle = title + riskText;
     return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
@@ -844,7 +867,7 @@ function hunterCard(h, rank, lineMode = false, targetIds = []) {
   const shinyLabel = lineMode ? "any line" : "target";
   return `<article class="hunter-card">
     <div class="hunter-rank">${rank}</div>
-    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div>${huntPhasePreview(h, targetIds)}${targetMemberBreakdown(h, h.speed, { compact:true })}</div>
+    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px">${encounterQualityBadge(h)}</div>${huntPhasePreview(h, targetIds)}${targetMemberBreakdown(h, h.speed, { compact:true })}</div>
     <div class="hunt-score"><strong>${formatRate(h.targetEph)}/hr</strong><small>${formatPercent(h.share)} ${shareLabel} share<br>${hoursLabel(h.hoursPerShiny)} per ${h.safariAdjusted ? "caught " : ""}${shinyLabel} shiny${safariLine}</small></div>
   </article>`;
 }
@@ -879,7 +902,7 @@ async function openEncounterSplit(h, targetIds = []) {
     const isTarget = targetIdSet.has(Number(component.pokemonId));
     const speciesEph = speed * Number(component.share || 0);
     const slow = component.slowAbilities || [];
-    const risks = component.selfHarmRisks || [];
+    const risks = table.selfHarmWarningsApplicable === false ? [] : (component.selfHarmRisks || []);
     const slowMarker = slow.length ? `<span class="slowdown-marker" title="May add a start-of-battle ability animation/message: ${escapeHtml(slow.join(", "))}"><img src="assets/icons/encounter-slowdown.png" alt="Start-of-battle slowdown warning"><span>${escapeHtml(slow.join(" / "))}</span></span>` : "";
     const riskMarker = risks.length ? selfHarmWarning(risks,{compact:true}) : "";
     const safari = component.safariCapture;
@@ -911,10 +934,11 @@ async function openEncounterSplit(h, targetIds = []) {
         </div>${sourceHtml}${safariHtml}</div>
     </article>`;
   }).join("");
-  const safariNote = table.safari ? `<div class="split-source"><strong>Safari estimates:</strong> balls-only calculations from ProfessorRex/HGSS-Safari-Zone. Applied to Johto Safari and Sinnoh Great Marsh where a species match exists; Kanto and Hoenn remain unadjusted.</div>` : "";
+  const safariNote = table.safari ? `<div class="split-source"><strong>Safari estimates:</strong> Balls-only calculations are applied to matched Johto Safari and Sinnoh Great Marsh species. Kanto and Hoenn remain encounter-share estimates without catch-rate adjustment.</div>` : "";
+  const safariCoverageNote = table.safariPool?.note ? `<p><strong>Safari source coverage:</strong> ${escapeHtml(table.safariPool.note)}${table.safariPool.lureModel ? " The Lure model is applied only to the documented base pool." : ""}</p>` : "";
   const affectedSlowdowns = table.components.filter(component => (component.slowAbilities || []).length);
   const slowdownLegend = affectedSlowdowns.length ? `<div class="slowdown-legend"><img src="assets/icons/encounter-slowdown.png" alt=""><span><strong>${affectedSlowdowns.length} ${affectedSlowdowns.length === 1 ? "species has" : "species have"} a possible start-of-battle delay.</strong> The red arrow is shown only on affected Pokémon; hover it to see the relevant ${affectedSlowdowns.length === 1 ? "ability" : "abilities"}.</span></div>` : "";
-  const affectedRisks = table.components.filter(component => (component.selfHarmRisks || []).length);
+  const affectedRisks = table.selfHarmWarningsApplicable === false ? [] : table.components.filter(component => (component.selfHarmRisks || []).length);
   const riskLegend = affectedRisks.length ? `<div class="wild-risk-legend"><span aria-hidden="true">⚠</span><span><strong>${affectedRisks.length} ${affectedRisks.length === 1 ? "species has" : "species have"} a potential self-KO or HP-loss risk at these levels.</strong> Hover the warning icon for the exact move or ability.</span></div>` : "";
   const isSweetScent = table.method.includes("Horde");
   const rawLabel = isSweetScent ? "Raw Dex horde block" : "Encounter outcome table";
@@ -924,10 +948,14 @@ async function openEncounterSplit(h, targetIds = []) {
     : table.method.startsWith("Lure")
       ? "The no-Lure encounter table totals 100%, including natural hordes. In this 5% Lure model, every existing outcome is multiplied by 95%, then the Lure-exclusive outcome is inserted at 5%. Pokémon-shown shares weight 3×/5× hordes by their size."
       : "Encounter outcomes total 100%, including natural hordes. Pokémon-shown shares are a second view used for shiny efficiency and weight 3×/5× hordes by their size.";
-  const calculationNotes = `<details class="calculation-notes"><summary>Calculation notes</summary><div><p>${escapeHtml(explanation)}</p><p>${escapeHtml(table.note)}</p>${safariNote}</div></details>`;
+  const calculationNotes = `<details class="calculation-notes"><summary>Calculation notes</summary><div><p>${escapeHtml(explanation)}</p><p>${escapeHtml(table.note)}</p>${safariCoverageNote}${safariNote}</div></details>`;
+  const pool = table.safariPool;
+  const splitSummaryMain = pool?.status === "partial"
+    ? `<span>${escapeHtml(pool.label || "Base pool")}: ${formatPercent(Number(pool.documentedTotal || 0), 0)} documented</span>${pool.lureModel ? '<span>Lure model uses documented base</span>' : ''}<span>Source-limited static table</span>`
+    : `<span>${rawLabel}: ${formatPercent(table.rawTableTotal, table.rawTableTotal < .1 ? 1 : 0)}</span>${isSweetScent ? '<span>Sweet Scent table: 100%</span>' : ''}${shownSummary}<span>${escapeHtml(table.confidence)} confidence</span>`;
   content.innerHTML = `<div class="split-head"><div><span class="eyebrow">Full encounter split</span><h2>${escapeHtml(table.location)}</h2><p><strong>${escapeHtml(table.method)}</strong> · ${escapeHtml(table.region)} · ${escapeHtml(table.encounterType)}</p></div><div class="split-speed"><strong>${formatNumber(speed,0)}/hr</strong><small>Pokémon shown</small></div></div>
     <div class="availability-feature">${availabilityVisual(h.availability)}</div>
-    <div class="split-summary"><span>${rawLabel}: ${formatPercent(table.rawTableTotal, table.rawTableTotal < .1 ? 1 : 0)}</span>${isSweetScent ? '<span>Sweet Scent table: 100%</span>' : ''}${shownSummary}<span>${escapeHtml(table.confidence)} confidence</span><span>${table.components.length} species</span></div>
+    <div class="split-summary">${splitSummaryMain}<span>${table.components.length} species</span></div>
     ${slowdownLegend}${riskLegend}
     <div class="split-list">${rows}</div>
     ${calculationNotes}`;
@@ -1072,7 +1100,7 @@ async function renderHunter(id = null) {
         <label class="toggle-line compact"><input id="hunter-lock-time" type="checkbox" ${currentSettings.lockTime ? "checked" : ""}><span>Keep time fixed</span></label>
       </div>
     </div>
-    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span><span class="chip ${confidenceClass(best.confidence)}">${best.confidence} confidence</span></div>${huntPhasePreview(best, targetIds, { prominent:true })}${targetMemberBreakdown(best, best.speed)}</div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(targetTitle)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>${lineMode ? "Evolution-line share" : "Target share"}</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}${expectedShinyLabel} shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.displaySafariSuccess > 0 ? "Weighted catch estimate" : "Current shiny rate"}</span><strong>${best.displaySafariSuccess > 0 ? formatPercent(best.displaySafariSuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
+    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span>${encounterQualityBadge(best,{chip:true})}</div>${huntPhasePreview(best, targetIds, { prominent:true })}${targetMemberBreakdown(best, best.speed)}</div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(targetTitle)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>${lineMode ? "Evolution-line share" : "Target share"}</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}${expectedShinyLabel} shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.displaySafariSuccess > 0 ? "Weighted catch estimate" : "Current shiny rate"}</span><strong>${best.displaySafariSuccess > 0 ? formatPercent(best.displaySafariSuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
     ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1,lineMode,targetIds)).join("")}</div></section>`).join("") : ""}
   </section>`;
   const rerender = () => renderHunter(id);
@@ -1122,7 +1150,8 @@ function routeOption(row) {
 function routeSpeciesPreview(table) {
   if (!table?.components?.length) return "";
   const components = table.components.slice(0, 4);
-  return `<div class="route-species-preview">${components.map(component => { const risks=component.selfHarmRisks||[]; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
+  const risksApplicable = table.selfHarmWarningsApplicable !== false;
+  return `<div class="route-species-preview">${components.map(component => { const risks=risksApplicable ? (component.selfHarmRisks||[]) : []; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
 }
 
 async function renderRouteSearcher() {
@@ -1179,7 +1208,7 @@ async function renderRouteSearcher() {
       <button class="pixel-btn ghost route-reset" id="route-reset" type="button">Reset</button>
     </div>
     ${!f.region ? `<div class="route-guide"><strong>Start with a region.</strong><span>Each following choice only shows options that actually exist for the previous selection.</span></div>` : !f.location ? `<div class="route-guide"><strong>${locations.length} viable areas in ${escapeHtml(f.region)}.</strong><span>Choose one to see only the methods available there.</span></div>` : !f.method ? `<div class="route-guide"><strong>${methods.length} viable ${methods.length===1?"method":"methods"} at ${escapeHtml(f.location)}.</strong><span>Choose a method to unlock its viable seasons and times.</span></div>` : ""}
-    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${formatNumber(Number(speeds[f.method]||0),0)}/hr</strong><small>method speed</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary"><span>${escapeHtml(row.confidence)} confidence</span><span>${row.containsRandomHordes ? "Includes natural horde roll" : `Raw ${formatPercent(row.rawTableTotal,row.rawTableTotal<.1?1:0)}`}</span></div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
+    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${formatNumber(Number(speeds[f.method]||0),0)}/hr</strong><small>method speed</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary">${routeTableStatus(row)}</div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
   </section>`;
 
   $("#route-region").addEventListener("change", e => { state.routeFilters={region:e.target.value,location:"",method:"",season:"All",time:"All"}; renderRouteSearcher(); });
@@ -1276,7 +1305,7 @@ function renderAbout() {
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
     <div class="about-simple-grid">
       <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits and route comparisons by method, season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
-      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
+      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
       <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
 }

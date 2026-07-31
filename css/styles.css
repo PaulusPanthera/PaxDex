@@ -1565,3 +1565,33 @@ html[data-theme="dark"] .wild-risk-legend > span:first-child { border-color:#ffd
   .wild-risk-marker:not(.compact) b { display:none; }
   .wild-risk-marker:not(.compact) { min-width:31px; justify-content:center; }
 }
+
+
+/* PaxDex v0.20: Safari source-coverage labels. */
+.safari-pool-badge {
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  color:#6a4a00;
+  background:#fff0b8;
+  border:1px solid #aa7800;
+  padding:3px 7px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.02em;
+}
+.chip.safari-pool-badge {
+  color:#604400;
+  background:#fff0b8;
+  border-color:#aa7800;
+}
+html[data-theme="dark"] .safari-pool-badge {
+  color:#ffe69a;
+  background:#463817;
+  border-color:#d6a936;
+}
+html[data-theme="dark"] .best-hunt .chip.safari-pool-badge {
+  color:#fff0ae;
+  background:#463817;
+  border-color:#e5bd4a;
+}

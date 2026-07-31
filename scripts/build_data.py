@@ -27,7 +27,34 @@ ASCII_LABEL_START_RE = re.compile(r"[A-Za-z0-9]")
 REGION_LABEL_RE = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
 REGION_ID_NAMES = {0: "Kanto", 1: "Hoenn", 2: "Unova", 3: "Sinnoh", 4: "Johto"}
 
+# The dump exposes the twelve Johto Safari biomes as stable location IDs, but
+# gives every one of them the same generic location name and marks land as
+# "Cave". The species pools match the standard biome names one-to-one.
+JOHTO_SAFARI_AREAS = {
+    343: "Plains",
+    344: "Meadow",
+    345: "Savannah",
+    346: "Peak",
+    347: "Rocky Beach",
+    348: "Wetland",
+    349: "Forest",
+    350: "Swamp",
+    351: "Marshland",
+    352: "Wasteland",
+    353: "Mountain",
+    354: "Desert",
+}
 
+# Hoenn already has descriptive compass labels in the dump. These numbers are
+# the familiar guide-area numbering and are added only as a secondary label.
+HOENN_SAFARI_AREA_NUMBERS = {
+    844: 1,   # South / entrance
+    588: 2,   # Southwest
+    76: 3,    # Northwest
+    332: 4,   # North
+    3404: 5,  # Southeast
+    3148: 6,  # Northeast
+}
 
 
 def clean_decorated_label(value: Any) -> str:
@@ -62,6 +89,32 @@ def is_safari_location(location: str) -> bool:
     """Return True only for locations where Safari battle rules actually apply."""
     name = str(location).strip()
     return bool(SAFARI_RE.search(name)) and not bool(NON_SAFARI_LOCATION_RE.fullmatch(name))
+
+
+def normalize_safari_location(region: str, location_id: int, location: str) -> str:
+    """Replace ambiguous Safari labels with stable, user-facing area names."""
+    if region == "Johto" and location_id in JOHTO_SAFARI_AREAS:
+        return f"Safari Zone — {JOHTO_SAFARI_AREAS[location_id]}"
+    if region == "Hoenn" and location_id in HOENN_SAFARI_AREA_NUMBERS:
+        area_match = re.search(r"\(([^)]+)\)", location)
+        area_name = area_match.group(1) if area_match else location.replace("Safari Zone", "").strip(" -—()")
+        return f"Safari Zone — {area_name} (Area {HOENN_SAFARI_AREA_NUMBERS[location_id]})"
+    if region == "Kanto" and location.startswith("Safari Zone ("):
+        return location.replace("Safari Zone (", "Safari Zone — ").rstrip(")")
+    if region == "Sinnoh" and location.startswith("Great Marsh ("):
+        return location.replace("Great Marsh (", "Great Marsh — ").rstrip(")")
+    return location
+
+
+def normalize_safari_encounter_type(region: str, encounter_type: str, safari: bool) -> str:
+    """Translate dump-internal Safari land labels into a clear field label."""
+    if not safari:
+        return encounter_type
+    if region == "Johto" and encounter_type == "Cave":
+        return "Land"
+    if region == "Sinnoh" and encounter_type == "Inside":
+        return "Land"
+    return encounter_type
 
 START_DELAY_ABILITIES = {
     "Intimidate", "Reactive Gas", "Pressure", "Unnerve", "Download",
@@ -207,6 +260,42 @@ def method_for(encounter_type: str, safari: bool, lure: bool = False) -> str:
     if encounter_type in {"Dust Cloud", "Shadow"}:
         return "Special"
     return "Singles"
+
+
+def safari_pool_metadata(region: str, encounter_type: str, method: str, raw_total: float, safari: bool) -> dict[str, Any] | None:
+    """Describe Safari source coverage without calling an incomplete base pool a bad calculation."""
+    if not safari:
+        return None
+    lure_model = method.startswith("Lure")
+    if region == "Johto" and encounter_type == "Land":
+        return {
+            "status": "partial",
+            "label": "Base land pool",
+            "documentedTotal": 0.9,
+            "lureModel": lure_model,
+            "note": (
+                "The static dump documents the 90% base land pool. "
+                "Block- and rotation-dependent encounters are not assigned to this table."
+            ),
+        }
+    if region == "Sinnoh" and encounter_type == "Land":
+        return {
+            "status": "partial",
+            "label": "Base land pool",
+            "documentedTotal": 0.8,
+            "lureModel": lure_model,
+            "note": (
+                "The static dump documents the 80% base land pool. "
+                "Daily Great Marsh rotation encounters are not included."
+            ),
+        }
+    return {
+        "status": "complete" if abs(raw_total - 1.0) <= 0.03 else "partial",
+        "label": "Encounter pool",
+        "documentedTotal": round(raw_total, 7),
+        "lureModel": lure_model,
+        "note": "Complete static Safari encounter table." if abs(raw_total - 1.0) <= 0.03 else "The static Safari table is not documented as a complete 100% pool.",
+    }
 
 
 def table_confidence(total: float, horde: bool = False, lure: bool = False, special: bool = False, explicit_sweet: bool = False) -> tuple[str, str]:
@@ -492,10 +581,12 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         for loc in mon.get("locations", []):
             region = clean_region_name(loc.get("region_name"), loc.get("region_id"))
             location_id = int(loc.get("location_id", 0) or 0)
-            location = str(loc.get("location_name_full") or loc.get("location_name") or "Unknown location")
-            encounter_type = clean_decorated_label(loc.get("type", "Unknown")) or "Unknown"
+            raw_location = str(loc.get("location_name_full") or loc.get("location_name") or "Unknown location")
+            raw_encounter_type = clean_decorated_label(loc.get("type", "Unknown")) or "Unknown"
             season = str(loc.get("season", "Any") or "Any")
-            safari = is_safari_location(location)
+            safari = is_safari_location(raw_location)
+            location = normalize_safari_location(region, location_id, raw_location) if safari else raw_location
+            encounter_type = normalize_safari_encounter_type(region, raw_encounter_type, safari)
             common = {
                 "region": region, "locationId": location_id, "location": location,
                 "encounterType": encounter_type, "season": season, "safari": safari,
@@ -598,6 +689,9 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "safariCapture": capture,
                 "sources": row.get("sources", []),
             })
+        safari_pool = safari_pool_metadata(
+            sample["region"], sample["encounterType"], method, raw_event_total, sample["safari"]
+        )
         signature_data = {
             "region": sample["region"], "locationId": sample["locationId"], "location": sample["location"],
             "encounterType": sample["encounterType"], "method": method, "safari": sample["safari"],
@@ -606,6 +700,9 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             "confidence": confidence, "note": note,
             "components": components,
         }
+        if safari_pool is not None:
+            signature_data["safariPool"] = safari_pool
+            signature_data["selfHarmWarningsApplicable"] = False
         signature = json.dumps(signature_data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         table_id = table_ids_by_signature.get(signature)
         if table_id is None:
@@ -649,6 +746,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "availability": [{"season": row["season"], "time": row["time"]}],
                 "safari": row["safari"], "tableId": table_id,
                 "safariCapture": capture_by_pid.get(pid),
+                **({
+                    "safariPool": encounter_tables[table_id].get("safariPool"),
+                    "selfHarmWarningsApplicable": False,
+                } if row["safari"] else {}),
             })
 
     def add_contribution(
@@ -916,7 +1017,12 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "tableId": str(opt["tableId"]), "region": opt["region"], "locationId": opt["locationId"],
                 "location": opt["location"], "encounterType": opt["encounterType"], "method": opt["method"],
                 "safari": opt["safari"], "confidence": opt["confidence"], "rawTableTotal": opt["rawTableTotal"],
-                "note": opt["note"], "shownTableTotal": opt.get("shownTableTotal"), "containsRandomHordes": opt.get("containsRandomHordes", False), "availability": [],
+                "note": opt["note"], "shownTableTotal": opt.get("shownTableTotal"), "containsRandomHordes": opt.get("containsRandomHordes", False),
+                **({
+                    "safariPool": opt.get("safariPool"),
+                    "selfHarmWarningsApplicable": False,
+                } if opt["safari"] else {}),
+                "availability": [],
             })
             for availability in opt["availability"]:
                 if availability not in route_row["availability"]:
@@ -1021,7 +1127,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.19",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.20",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

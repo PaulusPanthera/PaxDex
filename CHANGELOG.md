@@ -1,3 +1,13 @@
+# PaxDex v0.20
+
+- Replaced Johto Safari's generic numbered Cave tables with the twelve proper biome names: Plains, Meadow, Savannah, Peak, Rocky Beach, Wetland, Forest, Swamp, Marshland, Wasteland, Mountain and Desert.
+- Renamed Johto Safari `Cave` and Sinnoh Great Marsh `Inside` encounter types to the clearer **Land** label.
+- Added the familiar Area 1–6 numbering to Hoenn Safari's existing compass-area names.
+- Removed self-harm warning icons from Safari hunt cards, encounter pools, Route Searcher previews and full splits; global Pokédex warnings remain available for non-Safari encounters.
+- Replaced misleading `Raw 90%` / `Raw 80%` and confidence labels on incomplete Safari land pools with clear **Base land pool** source-coverage labels.
+- Johto land tables now explain that block/rotation-dependent encounters are not assigned by the static dump; Sinnoh land tables explain that daily Great Marsh rotations are not included.
+- Kept Kanto and Hoenn's complete 100% Safari tables unchanged apart from cleaner area presentation.
+
 # PaxDex v0.19
 
 - Added separate **Lure** and **Lure-exclusive** Pokédex filters.
