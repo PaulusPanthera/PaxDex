@@ -70,9 +70,20 @@ START_DELAY_ABILITIES = {
     "Snow Warning", "Air Lock", "Cloud Nine", "Slow Start", "Imposter",
 }
 
+# Every released member of the fossil-revival families through Generation V.
+FOSSIL_SPECIES = {
+    138, 139, 140, 141, 142,
+    345, 346, 347, 348,
+    408, 409, 410, 411,
+    564, 565, 566, 567,
+}
+
 DEX_CATEGORY_DEFS = [
+    {"id": "Lure", "label": "Lure", "group": "Special pools"},
     {"id": "Lure-exclusive", "label": "Lure-exclusive", "group": "Special pools"},
     {"id": "Safari", "label": "Safari", "group": "Special pools"},
+    {"id": "Special", "label": "Special", "group": "Special pools"},
+    {"id": "Fossil", "label": "Fossil", "group": "Special pools"},
     {"id": "5× Horde · 100%", "label": "5× Horde · 100%", "group": "Sweet Scent hordes"},
     {"id": "5× Horde · Split", "label": "5× Horde · Split", "group": "Sweet Scent hordes"},
     {"id": "3× Horde · 100%", "label": "3× Horde · 100%", "group": "Sweet Scent hordes"},
@@ -83,7 +94,6 @@ DEX_CATEGORY_DEFS = [
     {"id": "Rock Smash", "label": "Rock Smash", "group": "Other encounters"},
     {"id": "Headbutt", "label": "Headbutt", "group": "Other encounters"},
     {"id": "Honey Tree", "label": "Honey Tree", "group": "Other encounters"},
-    {"id": "Special", "label": "Special", "group": "Other encounters"},
 ]
 DEX_CATEGORY_ORDER = {row["id"]: index for index, row in enumerate(DEX_CATEGORY_DEFS)}
 
@@ -165,6 +175,8 @@ def parse_rate(value: Any) -> tuple[str, float]:
         return "none", 0.0
     if text.lower() == "lure":
         return "lure", 0.0
+    if text.lower() == "special":
+        return "special", 0.0
     if text.endswith("%"):
         try:
             return "rate", float(text[:-1]) / 100.0
@@ -474,6 +486,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     normal_tables: dict[tuple, dict[int, dict[str, Any]]] = defaultdict(dict)
     horde_tables: dict[tuple, dict[int, dict[str, Any]]] = defaultdict(dict)
     lure_entries: dict[tuple, set[int]] = defaultdict(set)
+    special_availability_by_pid: dict[int, set[tuple[str, str]]] = defaultdict(set)
 
     for pid, mon in monsters.items():
         for loc in mon.get("locations", []):
@@ -490,6 +503,11 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             for time in TIMES:
                 kind, rate = parse_rate(loc.get(TIME_FIELDS[time]))
                 if kind == "none":
+                    continue
+                if kind == "special":
+                    # Phenomena and other dump rows marked Special do not expose a
+                    # stable numeric rate, but remain useful as a Pokédex category.
+                    special_availability_by_pid[pid].add((season, time))
                     continue
                 if kind == "lure":
                     lure_entries[(region, location_id, encounter_type, season, time)].add(pid)
@@ -812,8 +830,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
         method = str(opt.get("method", ""))
         categories: list[str] = []
-        if "lure" in source_kinds:
-            categories.append("Lure-exclusive")
+        if method in {"Lure Singles", "Lure Safari"}:
+            categories.append("Lure")
         if bool(opt.get("safari")):
             categories.append("Safari")
         if method in {"5× Horde", "3× Horde"}:
@@ -859,6 +877,9 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         collapsed.sort(key=lambda x: (-x["share"], x["method"], x["region"], x["location"]))
         safe_json(data_dir / "hunts" / f"{pid}.json", collapsed)
         hunt_count += len(collapsed)
+        lure_exclusive_pairs: set[tuple[str, str]] = set()
+        has_lure_source = False
+        has_non_lure_source = False
         for opt in collapsed:
             methods_by_pid[pid].add(opt["method"])
             categories = dex_categories_for_option(pid, opt)
@@ -866,6 +887,18 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 (row for row in encounter_tables[str(opt["tableId"])].get("components", []) if int(row.get("pokemonId", -1)) == pid),
                 None,
             )
+            source_kinds = {
+                str(source.get("kind", ""))
+                for source in (table_component or {}).get("sources", [])
+            }
+            if "lure" in source_kinds:
+                has_lure_source = True
+                lure_exclusive_pairs.update(
+                    (availability["season"], availability["time"])
+                    for availability in opt["availability"]
+                )
+            if source_kinds - {"lure"}:
+                has_non_lure_source = True
             if table_component:
                 for risk in table_component.get("selfHarmRisks", []):
                     risk_key = (str(risk.get("kind", "")), str(risk.get("name", "")))
@@ -889,6 +922,22 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 if availability not in route_row["availability"]:
                     route_row["availability"].append(availability)
 
+        # Globally Lure-exclusive: no normal, horde, Safari, fishing, phenomenon,
+        # or other non-Lure wild source anywhere in the dump.
+        if has_lure_source and not has_non_lure_source and not special_availability_by_pid.get(pid):
+            dex_categories_by_pid[pid].add("Lure-exclusive")
+            category_availability_by_pid[pid]["Lure-exclusive"].update(lure_exclusive_pairs)
+
+        # "Special" includes phenomena and every dump row whose rarity is marked
+        # Special (for example rustling grass, rippling water, shadows or dust clouds).
+        if special_availability_by_pid.get(pid):
+            dex_categories_by_pid[pid].add("Special")
+            category_availability_by_pid[pid]["Special"].update(special_availability_by_pid[pid])
+
+        if pid in FOSSIL_SPECIES:
+            dex_categories_by_pid[pid].add("Fossil")
+            category_availability_by_pid[pid]["Fossil"].update(("Any", time) for time in TIMES)
+
     for entry in index:
         pid = entry["id"]
         entry["methods"] = sorted(methods_by_pid.get(pid, set()))
@@ -904,6 +953,15 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         }
         entry["dexCategories"] = sorted(
             dex_categories_by_pid.get(pid, set()),
+            key=lambda category: (DEX_CATEGORY_ORDER.get(category, 999), category),
+        )
+        search_categories = set(entry["dexCategories"])
+        if "5× Horde · 100%" in search_categories:
+            search_categories.discard("5× Horde · Split")
+        if "3× Horde · 100%" in search_categories:
+            search_categories.discard("3× Horde · Split")
+        entry["dexSearchCategories"] = sorted(
+            search_categories,
             key=lambda category: (DEX_CATEGORY_ORDER.get(category, 999), category),
         )
         entry["categoryAvailability"] = {
@@ -963,7 +1021,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.18",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.19",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

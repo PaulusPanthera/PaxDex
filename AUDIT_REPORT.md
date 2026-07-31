@@ -1,15 +1,12 @@
-# PaxDex v0.18 Audit Report
+# PaxDex v0.19 Audit Report
 
 ## Changes checked
 
-- Semantic Pokédex categories are derived from encounter sources rather than display method names.
-- Lure-exclusive categories require an actual `lure` source component.
-- Safari categories require a location where Safari battle rules apply.
-- 5×/3× horde categories distinguish one-species 100% tables from split tables.
-- Category season/time availability matches the underlying hunt tables.
-- Wild danger warnings are generated from each species' current four level-up moves across the encounter level range.
-- Only the first two normal ability slots are considered; hidden abilities remain excluded.
-- Phase previews and full encounter tables contain matching warning data.
+- Lure includes all species present in at least one Lure-enabled encounter table.
+- Lure-exclusive requires a Lure source and no normal, horde, Safari, fishing, phenomenon or other non-Lure wild source.
+- Special contains dump rows whose rarity is marked `Special`, including phenomena.
+- Fossil contains all released fossil-revival families through Generation V.
+- Pokémon may retain both 100% and Split horde labels on cards, while `dexSearchCategories` removes Split whenever a 100% horde of the same size exists.
 
 ## Automated checks
 
@@ -17,10 +14,13 @@
 - JavaScript syntax passes `node --check`.
 - 649 Pokémon entries and 58,370 hunt options validate.
 - 12,398 full encounter tables and Route Searcher rows validate.
-- All semantic category and category-availability summaries match detailed encounter data.
-- Voltorb Selfdestruct regression passes at applicable wild levels.
-- Existing Lure, natural-horde, Sweet Scent, Safari Zone Gate, Safari estimates and slowdown regressions pass.
+- Bulbasaur validates as Lure and globally Lure-exclusive.
+- Caterpie validates as Lure but not Lure-exclusive.
+- Audino validates under Special phenomena.
+- All 17 fossil-family species validate under Fossil.
+- No 100%-horde species remains searchable through the corresponding Split filter.
+- Existing Lure, natural-horde, Sweet Scent, Safari Zone Gate, Safari estimates, slowdown and wild-danger regressions pass.
 
 ## Browser note
 
-The execution environment used for this patch blocks Chromium from opening local/private-network pages. Browser rendering was therefore not claimed as an automated pass; the production code was checked through syntax, generated-data and reference validation.
+The execution environment blocked Chromium from opening local/private-network pages. Browser rendering was therefore not claimed as an automated pass; source syntax, generated data, references and filter semantics were validated directly.

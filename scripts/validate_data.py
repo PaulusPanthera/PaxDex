@@ -14,6 +14,13 @@ REQUIRED_HUNT_KEYS = {
     "maxLevel", "confidence", "note", "availability", "tableId"
 }
 
+FOSSIL_SPECIES = {
+    138, 139, 140, 141, 142,
+    345, 346, 347, 348,
+    408, 409, 410, 411,
+    564, 565, 566, 567,
+}
+
 
 def load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -44,8 +51,8 @@ def semantic_categories_for(pid: int, hunt: dict, table: dict) -> list[str]:
     source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
     method = str(hunt.get("method", ""))
     categories: list[str] = []
-    if "lure" in source_kinds:
-        categories.append("Lure-exclusive")
+    if method in {"Lure Singles", "Lure Safari"}:
+        categories.append("Lure")
     if hunt.get("safari"):
         categories.append("Safari")
     if method in {"5× Horde", "3× Horde"}:
@@ -102,9 +109,32 @@ def main() -> int:
     category_ids = [row.get("id") for row in dex_categories]
     if len(category_ids) != len(set(category_ids)) or not all(category_ids):
         errors.append("Pokédex encounter categories contain duplicate or empty IDs.")
-    required_categories = {"Lure-exclusive", "Safari", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing"}
+    required_categories = {"Lure", "Lure-exclusive", "Safari", "Special", "Fossil", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing"}
     if not required_categories.issubset(set(category_ids)):
         errors.append("Pokédex encounter categories are missing required semantic filters.")
+
+    by_id = {int(row["id"]): row for row in index}
+    bulbasaur_categories = set(by_id.get(1, {}).get("dexCategories", []))
+    caterpie_categories = set(by_id.get(10, {}).get("dexCategories", []))
+    audino_categories = set(by_id.get(531, {}).get("dexCategories", []))
+    if not {"Lure", "Lure-exclusive"}.issubset(bulbasaur_categories):
+        errors.append("Lure-category regression failed: Bulbasaur must be Lure and Lure-exclusive.")
+    if "Lure" not in caterpie_categories or "Lure-exclusive" in caterpie_categories:
+        errors.append("Lure-category regression failed: Caterpie must be Lure but not Lure-exclusive.")
+    if "Special" not in audino_categories:
+        errors.append("Special-category regression failed: Audino phenomenon encounters are missing.")
+    for fossil_id in FOSSIL_SPECIES:
+        if "Fossil" not in set(by_id.get(fossil_id, {}).get("dexCategories", [])):
+            errors.append(f"Fossil-category regression failed for Pokémon #{fossil_id}.")
+    for row in index:
+        labels = set(row.get("dexCategories", []))
+        searchable = set(row.get("dexSearchCategories", []))
+        for size in (3, 5):
+            pure = f"{size}× Horde · 100%"
+            split = f"{size}× Horde · Split"
+            if pure in labels and split in searchable:
+                errors.append(f"Split-priority regression failed for #{row.get('id')} at {size}× Horde.")
+
     if method_defaults.get("5× Horde") != 1200:
         errors.append("Default 5× Horde speed must be 1,200 encounters/hour.")
     if method_defaults.get("3× Horde") != 720:
@@ -269,6 +299,9 @@ def main() -> int:
 
         expected_categories: dict[str, set[tuple[str, str]]] = {}
         expected_risks: dict[tuple[str, str], dict] = {}
+        lure_exclusive_pairs: set[tuple[str, str]] = set()
+        has_lure_source = False
+        has_non_lure_source = False
         for hunt in hunts:
             table = encounter_tables.get(str(hunt.get("tableId")), {})
             component = next((row for row in table.get("components", []) if int(row.get("pokemonId", -1)) == pid), None)
@@ -277,18 +310,45 @@ def main() -> int:
                     (pair["season"], pair["time"]) for pair in hunt.get("availability", [])
                 )
             if component:
+                source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
+                if "lure" in source_kinds:
+                    has_lure_source = True
+                    lure_exclusive_pairs.update(
+                        (pair["season"], pair["time"]) for pair in hunt.get("availability", [])
+                    )
+                if source_kinds - {"lure"}:
+                    has_non_lure_source = True
                 for risk in component.get("selfHarmRisks", []):
                     expected_risks[(str(risk.get("kind")), str(risk.get("name")))] = risk
         listed_categories = p.get("dexCategories", [])
+        compact_category_availability = p.get("categoryAvailability", {})
+        if "Special" in listed_categories:
+            expected_categories["Special"] = {
+                (pair.get("season"), pair.get("time"))
+                for pair in compact_category_availability.get("Special", [])
+            }
+        if has_lure_source and not has_non_lure_source and "Special" not in listed_categories:
+            expected_categories["Lure-exclusive"] = lure_exclusive_pairs
+        if pid in FOSSIL_SPECIES:
+            expected_categories["Fossil"] = {("Any", time) for time in VALID_TIMES}
         if set(listed_categories) != set(expected_categories):
             errors.append(f"Semantic Pokédex categories for #{pid} do not match detailed encounter data.")
         if any(category not in category_ids for category in listed_categories):
             errors.append(f"Semantic Pokédex categories for #{pid} use an unknown category.")
-        compact_category_availability = p.get("categoryAvailability", {})
+        expected_search_categories = set(listed_categories)
+        if "5× Horde · 100%" in expected_search_categories:
+            expected_search_categories.discard("5× Horde · Split")
+        if "3× Horde · 100%" in expected_search_categories:
+            expected_search_categories.discard("3× Horde · Split")
+        if set(p.get("dexSearchCategories", [])) != expected_search_categories:
+            errors.append(f"Pokédex search categories for #{pid} do not apply the 100%-over-split priority.")
         if set(compact_category_availability) != set(expected_categories):
             errors.append(f"Category availability keys for #{pid} do not match its semantic categories.")
         for category, pairs in compact_category_availability.items():
             actual_pairs = {(pair.get("season"), pair.get("time")) for pair in pairs}
+            for season, time in actual_pairs:
+                if season not in VALID_SEASONS or time not in VALID_TIMES:
+                    errors.append(f"Category availability for #{pid} {category} contains invalid {season!r}/{time!r}.")
             if actual_pairs != expected_categories.get(category, set()):
                 errors.append(f"Category availability for #{pid} {category} does not match detailed encounters.")
         actual_risk_keys = {(str(risk.get("kind")), str(risk.get("name"))) for risk in p.get("wildSelfHarmRisks", [])}
@@ -447,6 +507,8 @@ def main() -> int:
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")
+    print("- Lure, globally Lure-exclusive, Special/phenomenon and Fossil Pokédex categories validated")
+    print("- 100% horde species keep their labels but are excluded from the corresponding Split search")
     print("- Bulbasaur Lure-exclusive encounter roll = 5%")
     print("- Route 229 Autumn Night 5× Horde = Ariados 40%, Volbeat 30%, Illumise 30%")
     print("- Natural 5% horde blocks are included in Singles and Lure Singles, then extracted separately for Sweet Scent")

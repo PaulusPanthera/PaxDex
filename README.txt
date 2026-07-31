@@ -1,14 +1,13 @@
-PAXDEX v0.18 · SEMANTIC FILTERS AND WILD DANGER WARNINGS
+PAXDEX v0.19 · REFINED POKÉDEX ENCOUNTER CATEGORIES
 
 Open locally with START_PAXDEX.bat or publish the repository through GitHub Pages.
 
-NEW IN v0.18
-- Pokédex filters now describe what the user is looking for rather than the internal route-calculation method.
-- Lure-exclusive lists only special Lure-slot Pokémon.
-- Safari lists Pokémon found in actual Safari-rule locations.
-- 5× and 3× hordes are separated into 100% and split encounter tables.
-- Warning markers identify wild Pokémon that can lose HP or faint through their current level-up moves or normal abilities.
-- Hover a warning to see the exact risk and applicable levels.
+NEW IN v0.19
+- Lure now lists every Pokémon with at least one Lure-enabled hunting spot.
+- Lure-exclusive is limited to Pokémon with no non-Lure wild encounter anywhere in the dump.
+- Special now includes phenomena and other encounters marked Special by the Pokédex dump.
+- Added a Fossil category for all fossil-revival families through Generation V.
+- 100% and Split horde labels remain visible on cards, but Split search hides species that also have a 100% horde of the same size.
 
 DATA
 - 649 Pokémon
@@ -18,4 +17,4 @@ DATA
 
 UPDATE DATA
 Place a fresh dump at input/dump.zip and run UPDATE_FROM_DUMP.bat.
-The builder regenerates the semantic filters and level-specific danger warnings automatically.
+The builder regenerates all categories and encounter warnings automatically.

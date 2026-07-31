@@ -1,3 +1,12 @@
+# PaxDex v0.19
+
+- Added separate **Lure** and **Lure-exclusive** Pokédex filters.
+- Lure covers every Pokémon with a Lure-enabled spot; Lure-exclusive now means no non-Lure wild encounter exists anywhere in the dump.
+- Added **Special** for phenomena and other dump encounters marked Special.
+- Added a **Fossil** filter for every fossil-revival family through Generation V.
+- Kept 100% and Split horde labels on Pokémon cards while removing 100%-horde species from the corresponding Split search results.
+- Added validation regressions for all new category rules.
+
 # PaxDex v0.18
 
 - Replaced the Pokédex Hunt Method filter with user-facing encounter categories.
