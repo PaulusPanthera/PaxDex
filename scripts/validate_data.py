@@ -46,6 +46,7 @@ def main() -> int:
         methods = load(ROOT / "data" / "methods.json")
         build_info = load(ROOT / "data" / "build-info.json")
         encounter_tables = load(ROOT / "data" / "encounter-tables.json")
+        phase_previews = load(ROOT / "data" / "phase-previews.json")
         safari_rates = load(ROOT / "data" / "safari-rates.json")
     except Exception as exc:
         print("VALIDATION FAILED")
@@ -82,6 +83,8 @@ def main() -> int:
 
     if int(build_info.get("encounterTables", -1)) != len(encounter_tables):
         errors.append(f"build-info table count is {build_info.get('encounterTables')}, generated table file contains {len(encounter_tables)}.")
+    if set(phase_previews) != set(encounter_tables):
+        errors.append("Phase-preview table IDs do not match the full encounter tables.")
     for table_id, table in encounter_tables.items():
         if table.get("region") not in VALID_REGIONS:
             errors.append(f"Encounter table {table_id} has invalid region {table.get('region')!r}.")
@@ -97,6 +100,16 @@ def main() -> int:
         ids_in_table = [int(c.get("pokemonId", 0)) for c in components]
         if len(ids_in_table) != len(set(ids_in_table)):
             errors.append(f"Encounter table {table_id} contains duplicate Pokémon components.")
+        expected_preview = [
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7))
+            for c in components
+        ]
+        actual_preview = [
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7))
+            for c in phase_previews.get(str(table_id), [])
+        ]
+        if actual_preview != expected_preview:
+            errors.append(f"Phase preview {table_id} does not match its full encounter table.")
         for component in components:
             for ability in component.get("slowAbilities", []):
                 if ability not in component.get("abilities", []):
@@ -189,6 +202,24 @@ def main() -> int:
         for listed_method in listed_methods:
             if listed_method not in method_ids:
                 errors.append(f"Compact index for #{pid} uses unknown method {listed_method!r}.")
+
+        compact_availability = p.get("methodAvailability", {})
+        if set(compact_availability) != set(listed_methods):
+            errors.append(f"Compact availability methods for #{pid} do not match its listed hunt methods.")
+        expected_availability: dict[str, set[tuple[str, str]]] = {}
+        for hunt in hunts:
+            expected_availability.setdefault(hunt["method"], set()).update(
+                (pair["season"], pair["time"]) for pair in hunt.get("availability", [])
+            )
+        for method, pairs in compact_availability.items():
+            actual_pairs = {(pair.get("season"), pair.get("time")) for pair in pairs}
+            if len(actual_pairs) != len(pairs):
+                errors.append(f"Compact availability for #{pid} {method} contains duplicate pairs.")
+            for season, time in actual_pairs:
+                if season not in VALID_SEASONS or time not in VALID_TIMES:
+                    errors.append(f"Compact availability for #{pid} {method} contains invalid {season!r}/{time!r}.")
+            if actual_pairs != expected_availability.get(method, set()):
+                errors.append(f"Compact availability for #{pid} {method} does not match detailed hunts.")
 
         for folder in ("normal", "shiny", "icons", "icons-shiny"):
             if not (ROOT / "sprites" / folder / f"{pid}.png").exists():

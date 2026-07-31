@@ -1,5 +1,5 @@
-PAXDEX v0.15 · COMPLETE PICKER SCROLLING
-==========================================
+PAXDEX v0.16 · SEASONAL DEX FILTERS & PHASE PREVIEWS
+=====================================================
 
 A compact, route-first PokeMMO Pokédex and shiny-hunting planner.
 
@@ -10,31 +10,21 @@ GITHUB PAGES
 3. Commit and push to main in GitHub Desktop.
 4. The included workflow validates the generated data and deploys the production site.
 
-NEW IN v0.15
-
-- The empty Shiny Hunter picker now includes every eligible Pokémon or evolution line in Pokédex order.
-- Removed the hidden 12-entry browse cap that made the scrollbar stop early.
-- Added rendering containment so the complete list remains responsive.
+NEW IN v0.16
 ------------
-- Added a visual Pokémon picker with sprites, types and Pokédex numbers.
-- Selected targets persist while changing season, time or target scope.
-- Evolution-line mode shows base forms only.
-- Refreshed Pokédex cards and route-table previews.
-- Added icons for all currently listed wild held items.
-- Grouped duplicate hunt-preview rows on Pokémon pages.
-- Collapsed advanced encounter-speed settings.
-
-LOCAL TESTING
--------------
-Double-click START_PAXDEX.bat. The site opens at http://localhost:8767.
-Opening index.html directly will not work because browsers block local JSON requests.
+- Added Pokédex filters for Hunt Method, Season and Time in the same search.
+- Added Possible Phases sprite previews directly to Shiny Hunter location cards.
+- Targets are highlighted; other species link to their Pokédex entries.
+- Complete percentages and encounter sources remain available through the full split.
+- Added compact generated lookup data and permanent validation for both features.
 
 FEATURES
 --------
 - Searchable Gen 1-5 Pokédex with normal and shiny PokeMMO sprites
+- Pokédex filtering by method, season, time, generation and availability
 - Stats, abilities, breeding groups, evolution family, held items and moves
-- Pokédex filtering by hunt method, generation and availability
 - Shiny Hunter for an exact form or complete evolution line
+- Possible-phase previews on hunt results
 - Route Searcher with Region > Route > Method > Season > Time choices
 - Full method-specific encounter split inspector
 - Natural horde rolls included in random encounter tables and extracted for Sweet Scent
@@ -42,6 +32,11 @@ FEATURES
 - Editable shiny bonuses and encounters-per-hour assumptions
 - Community Safari estimates for matching Johto Safari and Sinnoh Great Marsh species
 - Light, dark and system display modes
+
+LOCAL TESTING
+-------------
+Double-click START_PAXDEX.bat. The site opens at http://localhost:8767.
+Opening index.html directly will not work because browsers block local JSON requests.
 
 DATA
 ----

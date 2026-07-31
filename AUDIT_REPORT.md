@@ -1,10 +1,12 @@
-# PaxDex v0.15 Audit Report
+# PaxDex v0.16 Audit Report
 
-- Generated-data validation passed: 649 Pokédex entries, 58,370 hunt options, and 12,398 encounter tables.
-- JavaScript syntax validation passed.
-- Exact Form picker contains all 558 wild-encounter Pokémon when no search is entered.
-- Evolution Line picker contains all 270 eligible base-form lines when no search is entered.
-- The former 12-entry browse cap is removed.
-- Search results retain their separate relevance-ranked limit.
-- Lazy-loaded sprites and CSS rendering containment are enabled for the complete picker list.
-- GitHub Pages paths and deployment workflow are unchanged.
+- Generated-data validation passed: 649 Pokédex entries, 58,370 hunt options and 12,398 encounter tables.
+- JavaScript syntax and Python compilation passed.
+- Every compact method/season/time availability entry matches its detailed Pokémon hunts.
+- Every compact phase preview matches the corresponding full encounter table.
+- Pokédex regression passed for combined filters: Zangoose appears for 5× Horde · Winter · Night and is excluded for Spring.
+- Shiny Hunter phase previews render on both the best result and normal location cards, with target highlighting.
+- Full encounter-split controls remain available after adding the previews.
+- Desktop and 390 px mobile browser smoke checks passed without console errors or horizontal overflow.
+- Existing Lure, natural-horde, Sweet Scent, Safari, Safari Zone Gate and hidden-ability regressions passed.
+- Production CSS and JavaScript cache keys were updated to v0.16 for GitHub Pages deployment.

@@ -9,10 +9,11 @@ const state = {
   detailCache: new Map(),
   huntCache: new Map(),
   encounterTables: null,
+  phasePreviews: null,
   routeIndex: null,
   activeHuntMap: new Map(),
   dexPage: 1,
-  dexFilters: { query: "", method: "All", generation: "All", availability: "Obtainable" },
+  dexFilters: { query: "", method: "All", season: "All", time: "All", generation: "All", availability: "Obtainable" },
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
   hunterSelectedId: null,
@@ -278,6 +279,10 @@ function targetMemberBreakdown(hunt, speed, { compact = false } = {}) {
 async function getEncounterTables() {
   if (!state.encounterTables) state.encounterTables = await fetchJSON("data/encounter-tables.json");
   return state.encounterTables;
+}
+async function getPhasePreviews() {
+  if (!state.phasePreviews) state.phasePreviews = await fetchJSON("data/phase-previews.json");
+  return state.phasePreviews;
 }
 async function getRouteIndex() {
   if (!state.routeIndex) state.routeIndex = await fetchJSON("data/route-index.json");
@@ -567,12 +572,23 @@ function renderHome() {
   bindCommonClicks();
 }
 
+function dexAvailabilityMatches(pokemon, method, season, time) {
+  if (method === "All" && season === "All" && time === "All") return true;
+  const availabilityByMethod = pokemon.methodAvailability || {};
+  const methods = method === "All" ? Object.keys(availabilityByMethod) : [method];
+  return methods.some(methodName => (availabilityByMethod[methodName] || []).some(pair =>
+    (season === "All" || pair.season === season || pair.season === "Any") &&
+    (time === "All" || pair.time === time)
+  ));
+}
+
 function filterPokemon() {
   const f = state.dexFilters;
   const q = f.query.trim().toLowerCase();
   return state.pokemon.filter(p => {
     if (q && !p.name.toLowerCase().includes(q) && !String(p.id).includes(q.replace(/^#/, ""))) return false;
     if (f.method !== "All" && !(p.methods || []).includes(f.method)) return false;
+    if (!dexAvailabilityMatches(p, f.method, f.season, f.time)) return false;
     if (f.generation !== "All" && generationFor(p.id) !== Number(f.generation)) return false;
     if (f.availability === "Obtainable" && !p.obtainable) return false;
     if (f.availability === "Wild" && !p.hasLocations) return false;
@@ -591,9 +607,11 @@ function renderDex() {
     <div class="section-head"><div><span class="eyebrow">Pocket index</span><h1 class="page-title">Pokédex</h1><p>${filtered.length} Pokémon match your filters.</p></div>
       <button class="pixel-btn secondary" id="dex-shiny">${settings().shinySprites ? "✨ Shiny sprites" : "Normal sprites"}</button>
     </div>
-    <div class="toolbar">
-      <div class="field"><label>Search</label><input id="dex-query" value="${escapeHtml(state.dexFilters.query)}" placeholder="Name or number"></div>
+    <div class="toolbar dex-toolbar">
+      <div class="field dex-search-field"><label>Search</label><input id="dex-query" value="${escapeHtml(state.dexFilters.query)}" placeholder="Name or number"></div>
       <div class="field"><label>Hunt method</label><select id="dex-method"><option>All</option>${methods.map(m => `<option ${m===state.dexFilters.method?"selected":""}>${escapeHtml(m)}</option>`).join("")}</select></div>
+      <div class="field"><label>Season</label><select id="dex-season">${["All","Spring","Summer","Autumn","Winter"].map(x=>`<option ${x===state.dexFilters.season?"selected":""}>${x}</option>`).join("")}</select></div>
+      <div class="field"><label>Time</label><select id="dex-time">${["All","Morning","Day","Night"].map(x=>`<option ${x===state.dexFilters.time?"selected":""}>${x}</option>`).join("")}</select></div>
       <div class="field"><label>Generation</label><select id="dex-gen"><option>All</option>${[1,2,3,4,5].map(g => `<option value="${g}" ${String(g)===String(state.dexFilters.generation)?"selected":""}>Gen ${g}</option>`).join("")}</select></div>
       <div class="field"><label>Availability</label><select id="dex-availability">${["Obtainable","Wild","All"].map(x=>`<option ${x===state.dexFilters.availability?"selected":""}>${x}</option>`).join("")}</select></div>
       <button class="pixel-btn ghost" id="dex-reset">Reset</button>
@@ -611,9 +629,11 @@ function renderDex() {
   };
   $("#dex-query").addEventListener("input", e => { state.dexFilters.query = e.target.value; update(true); });
   $("#dex-method").addEventListener("change", e => { state.dexFilters.method = e.target.value; update(); });
+  $("#dex-season").addEventListener("change", e => { state.dexFilters.season = e.target.value; update(); });
+  $("#dex-time").addEventListener("change", e => { state.dexFilters.time = e.target.value; update(); });
   $("#dex-gen").addEventListener("change", e => { state.dexFilters.generation = e.target.value; update(); });
   $("#dex-availability").addEventListener("change", e => { state.dexFilters.availability = e.target.value; update(); });
-  $("#dex-reset").addEventListener("click", () => { state.dexFilters = { query:"", method:"All", generation:"All", availability:"Obtainable" }; update(); });
+  $("#dex-reset").addEventListener("click", () => { state.dexFilters = { query:"", method:"All", season:"All", time:"All", generation:"All", availability:"Obtainable" }; update(); });
   $("#load-more")?.addEventListener("click", () => { state.dexPage++; renderDex(); });
   $("#dex-shiny").addEventListener("click", () => { const s=settings(); s.shinySprites=!s.shinySprites; saveJSON(STORAGE.settings,s); renderDex(); });
   bindPokemonCards();
@@ -752,7 +772,30 @@ function availabilityVisual(items) {
   return `<span class="availability-icons">${seasonHtml}${timeHtml}</span>`;
 }
 
-function hunterCard(h, rank, lineMode = false) {
+function huntPhasePreview(hunt, targetIds = [], { prominent = false } = {}) {
+  const componentsSource = state.phasePreviews?.[String(hunt.tableId)] || state.encounterTables?.[String(hunt.tableId)]?.components || [];
+  if (!componentsSource.length) return "";
+  const targets = new Set((targetIds || []).map(Number));
+  const maxVisible = prominent ? 12 : 10;
+  const components = [...componentsSource].sort((a, b) => {
+    const aTarget = targets.has(Number(a.pokemonId)) ? 1 : 0;
+    const bTarget = targets.has(Number(b.pokemonId)) ? 1 : 0;
+    return bTarget - aTarget || Number(b.share || 0) - Number(a.share || 0) || Number(a.pokemonId) - Number(b.pokemonId);
+  });
+  const visible = components.slice(0, maxVisible);
+  const hidden = components.length - visible.length;
+  const shiny = settings().shinySprites;
+  return `<div class="hunt-phase-preview ${prominent ? "prominent" : ""}">
+    <span class="phase-preview-label">Possible phases</span>
+    <div class="phase-preview-icons">${visible.map(component => {
+      const isTarget = targets.has(Number(component.pokemonId));
+      const title = `${component.name}${isTarget ? " · target" : ""} · ${formatPercent(component.share)} of Pokémon shown`;
+      return `<a class="phase-preview-mon ${isTarget ? "target" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
+    }).join("")}${hidden > 0 ? `<button class="phase-preview-more" type="button" data-open-hunt="${escapeHtml(hunt.uiKey)}" title="Open the full encounter split">+${hidden}</button>` : ""}</div>
+  </div>`;
+}
+
+function hunterCard(h, rank, lineMode = false, targetIds = []) {
   const safariLine = h.safari
     ? h.displaySafariSuccess > 0
       ? `<br><span class="safari-inline">${formatPercent(h.displaySafariSuccess)} weighted balls-only catch estimate${h.safariAdjusted ? " · applied" : ""}</span>`
@@ -762,7 +805,7 @@ function hunterCard(h, rank, lineMode = false) {
   const shinyLabel = lineMode ? "any line" : "target";
   return `<article class="hunter-card">
     <div class="hunter-rank">${rank}</div>
-    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div>${targetMemberBreakdown(h, h.speed, { compact:true })}</div>
+    <div><button class="hunt-location-button" type="button" data-open-hunt="${escapeHtml(h.uiKey)}"><span>${escapeHtml(h.location)}</span><small>View full encounter split ↓</small></button><div class="hunt-meta"><span>${escapeHtml(h.region)}</span><span>${escapeHtml(h.encounterType)}</span><span>Lv. ${h.minLevel || "?"}–${h.maxLevel || "?"}</span><span class="availability-wrap" title="${escapeHtml(availabilityLabel(h.availability))}">${availabilityVisual(h.availability)}</span></div><div style="margin-top:7px"><span class="confidence ${confidenceClass(h.confidence)}">${h.confidence} confidence</span></div>${huntPhasePreview(h, targetIds)}${targetMemberBreakdown(h, h.speed, { compact:true })}</div>
     <div class="hunt-score"><strong>${formatRate(h.targetEph)}/hr</strong><small>${formatPercent(h.share)} ${shareLabel} share<br>${hoursLabel(h.hoursPerShiny)} per ${h.safariAdjusted ? "caught " : ""}${shinyLabel} shiny${safariLine}</small></div>
   </article>`;
 }
@@ -938,7 +981,7 @@ async function renderHunter(id = null) {
   if (!p) return renderNotFound();
   setPageTitle(`${p.name} Shiny Hunt`);
   $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Checking every route for ${escapeHtml(p.name)}…</p></section>`;
-  const targetData = await loadHunterTarget(id, targetMode);
+  const [targetData] = await Promise.all([loadHunterTarget(id, targetMode), getPhasePreviews()]);
   const hunts = targetData.hunts;
   const targetPokemon = targetData.targetPokemon;
   const targetIds = targetData.targetIds;
@@ -986,8 +1029,8 @@ async function renderHunter(id = null) {
         <label class="toggle-line compact"><input id="hunter-lock-time" type="checkbox" ${currentSettings.lockTime ? "checked" : ""}><span>Keep time fixed</span></label>
       </div>
     </div>
-    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span><span class="chip ${confidenceClass(best.confidence)}">${best.confidence} confidence</span></div>${targetMemberBreakdown(best, best.speed)}</div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(targetTitle)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>${lineMode ? "Evolution-line share" : "Target share"}</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}${expectedShinyLabel} shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.displaySafariSuccess > 0 ? "Weighted catch estimate" : "Current shiny rate"}</span><strong>${best.displaySafariSuccess > 0 ? formatPercent(best.displaySafariSuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
-    ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1,lineMode)).join("")}</div></section>`).join("") : ""}
+    ${best ? `<article class="best-hunt"><div><span class="eyebrow">Best matching option</span><button type="button" class="best-location-button" data-open-hunt="${escapeHtml(best.uiKey)}"><span>${escapeHtml(best.location)}</span><small>Open the full ${escapeHtml(best.method)} split ↓</small></button><p><strong>${escapeHtml(best.method)}</strong> · ${escapeHtml(best.region)}</p><div class="availability-feature">${availabilityVisual(best.availability)}</div><div class="chip-list"><span class="chip">${escapeHtml(best.encounterType)}</span><span class="chip">Lv. ${best.minLevel||"?"}–${best.maxLevel||"?"}</span><span class="chip ${confidenceClass(best.confidence)}">${best.confidence} confidence</span></div>${targetMemberBreakdown(best, best.speed)}${huntPhasePreview(best, targetIds, { prominent:true })}</div><div><div class="big-number">${formatRate(best.targetEph)}<small>${escapeHtml(targetTitle)} encounters/hour</small></div><div class="metric-grid"><div class="metric"><span>${lineMode ? "Evolution-line share" : "Target share"}</span><strong>${formatPercent(best.share)}</strong></div><div class="metric"><span>Method speed</span><strong>${formatNumber(best.speed,0)}/hr</strong></div><div class="metric"><span>Expected ${best.safariAdjusted ? "caught " : ""}${expectedShinyLabel} shiny</span><strong>${hoursLabel(best.hoursPerShiny)}</strong></div><div class="metric"><span>${best.displaySafariSuccess > 0 ? "Weighted catch estimate" : "Current shiny rate"}</span><strong>${best.displaySafariSuccess > 0 ? formatPercent(best.displaySafariSuccess) : `≈ 1 / ${Math.round(effectiveDenominator).toLocaleString()}`}</strong></div></div></div></article>` : `<div class="empty-state"><h2>No matching hunt found</h2><p>Try clearing a season, time or method filter.</p></div>`}
+    ${best ? methodOrder.map(method => `<section class="method-section"><h2 class="method-title">${escapeHtml(method)}</h2><div class="hunt-list">${byMethod.get(method).slice(0,8).map((h,i)=>hunterCard(h,i+1,lineMode,targetIds)).join("")}</div></section>`).join("") : ""}
   </section>`;
   const rerender = () => renderHunter(id);
   $$('[data-target-mode]').forEach(btn => btn.addEventListener('click', () => {

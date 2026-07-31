@@ -682,6 +682,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     # Collapse repeated availability only when the entire encounter split is identical.
     hunt_count = 0
     methods_by_pid: dict[int, set[str]] = defaultdict(set)
+    availability_by_pid: dict[int, dict[str, set[tuple[str, str]]]] = defaultdict(lambda: defaultdict(set))
     route_index_by_table: dict[str, dict[str, Any]] = {}
     for pid in monsters:
         grouped: dict[tuple, dict[str, Any]] = {}
@@ -708,6 +709,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         hunt_count += len(collapsed)
         for opt in collapsed:
             methods_by_pid[pid].add(opt["method"])
+            for availability in opt["availability"]:
+                availability_by_pid[pid][opt["method"]].add((availability["season"], availability["time"]))
             route_row = route_index_by_table.setdefault(str(opt["tableId"]), {
                 "tableId": str(opt["tableId"]), "region": opt["region"], "locationId": opt["locationId"],
                 "location": opt["location"], "encounterType": opt["encounterType"], "method": opt["method"],
@@ -719,7 +722,18 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                     route_row["availability"].append(availability)
 
     for entry in index:
-        entry["methods"] = sorted(methods_by_pid.get(entry["id"], set()))
+        pid = entry["id"]
+        entry["methods"] = sorted(methods_by_pid.get(pid, set()))
+        entry["methodAvailability"] = {
+            method: [
+                {"season": season, "time": time}
+                for season, time in sorted(
+                    pairs,
+                    key=lambda pair: (season_order.get(pair[0], 99), time_order.get(pair[1], 99)),
+                )
+            ]
+            for method, pairs in sorted(availability_by_pid.get(pid, {}).items())
+        }
     safe_json(data_dir / "index.json", index)
     route_index = list(route_index_by_table.values())
     for row in route_index:
@@ -727,6 +741,17 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     route_index.sort(key=lambda x: (x["region"], x["location"], x["method"], int(x["tableId"])))
     safe_json(data_dir / "route-index.json", route_index)
     safe_json(data_dir / "encounter-tables.json", encounter_tables)
+    safe_json(data_dir / "phase-previews.json", {
+        str(table_id): [
+            {
+                "pokemonId": int(component["pokemonId"]),
+                "name": component["name"],
+                "share": round(float(component["share"]), 7),
+            }
+            for component in table.get("components", [])
+        ]
+        for table_id, table in encounter_tables.items()
+    })
 
     methods = [
         {"id": "5× Horde", "label": "5× Horde", "defaultEph": 1200},
@@ -747,7 +772,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.15",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.16",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

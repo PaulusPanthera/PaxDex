@@ -1,3 +1,12 @@
+# PaxDex v0.16
+
+- Added Season and Time filters to the Pokédex. These combine with Hunt Method, so searches such as **5× Horde · Winter · Night** only show Pokémon available under that exact combination.
+- Added compact **Possible phases** previews to Shiny Hunter location cards and the best-result panel.
+- Phase previews show the complete encounter-table species at a glance, highlight the selected target, and link each sprite to its Pokédex entry.
+- Large encounter tables show the first relevant phases plus a `+N` shortcut to the complete split.
+- Added compact generated availability and phase-preview data with validation, avoiding the need to load the full 23 MB encounter-table file for ordinary hunt browsing.
+- Re-ran JavaScript, Python, generated-data, filter, phase-preview and mobile-overflow checks.
+
 # PaxDex v0.15
 
 ## Shiny Hunter picker
