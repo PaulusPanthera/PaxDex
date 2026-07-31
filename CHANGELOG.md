@@ -1,3 +1,12 @@
+# PaxDex v0.17
+
+- Redesigned hunt-card phase previews as a larger, integrated **Encounter pool**.
+- Increased species sprites and names for faster scanning, with a stronger gold **Target** marker.
+- Pure target tables now use a compact **100% target horde** summary instead of a mostly empty preview box.
+- Added direct Full Split access in every pool and horizontal scrolling on mobile.
+- Kept encounter percentages in tooltips and the full split to avoid cluttering route cards.
+- Re-ran syntax, data-reference, desktop and mobile layout checks.
+
 # PaxDex v0.16
 
 - Added Season and Time filters to the Pokédex. These combine with Hunt Method, so searches such as **5× Horde · Winter · Night** only show Pokémon available under that exact combination.

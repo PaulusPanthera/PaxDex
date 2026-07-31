@@ -1,4 +1,4 @@
-PAXDEX v0.16 · SEASONAL DEX FILTERS & PHASE PREVIEWS
+PAXDEX v0.17 · ENCOUNTER POOL REDESIGN
 =====================================================
 
 A compact, route-first PokeMMO Pokédex and shiny-hunting planner.
@@ -10,13 +10,12 @@ GITHUB PAGES
 3. Commit and push to main in GitHub Desktop.
 4. The included workflow validates the generated data and deploys the production site.
 
-NEW IN v0.16
+NEW IN v0.17
 ------------
-- Added Pokédex filters for Hunt Method, Season and Time in the same search.
-- Added Possible Phases sprite previews directly to Shiny Hunter location cards.
-- Targets are highlighted; other species link to their Pokédex entries.
-- Complete percentages and encounter sources remain available through the full split.
-- Added compact generated lookup data and permanent validation for both features.
+- Rebuilt Possible Phases as an integrated Encounter Pool on every hunt result.
+- Increased sprite size and strengthened target highlighting for faster route comparison.
+- Added compact 100% target-horde summaries for pure target tables.
+- Added horizontal mobile scrolling and direct Full Split access from each pool.
 
 FEATURES
 --------
@@ -24,7 +23,7 @@ FEATURES
 - Pokédex filtering by method, season, time, generation and availability
 - Stats, abilities, breeding groups, evolution family, held items and moves
 - Shiny Hunter for an exact form or complete evolution line
-- Possible-phase previews on hunt results
+- Encounter-pool previews on hunt results
 - Route Searcher with Region > Route > Method > Season > Time choices
 - Full method-specific encounter split inspector
 - Natural horde rolls included in random encounter tables and extracted for Sweet Scent
