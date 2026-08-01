@@ -1,3 +1,13 @@
+# PaxDex v0.22
+
+- Rebuilt PaxDex from the newest corrected PokeMMO Pokédex dump.
+- Updated Lure encounter placements for 45 affected Pokémon, including corrected floors, rooms, route sections and Safari areas.
+- Route 215's Lure-exclusive slot now correctly contains Alakazam instead of Lickilicky.
+- Corrected notable placements such as Charmeleon in Rock Tunnel 1F, Gengar in Pokémon Tower 3F, Pupitar in Unova Victory Road 1F and Rotom in Old Chateau 1F.
+- Refreshed all affected Lure hunt rankings, encounter pools, full splits, Pokédex availability filters and Route Searcher rows.
+- Updated generated totals to 58,375 hunt options and 12,400 encounter tables.
+- Added validator regressions for the corrected Lure locations so an older dump cannot silently restore them.
+
 # PaxDex v0.21
 
 - Replaced the custom **Land** label with the standard **Grass** label for Johto Safari and Sinnoh Great Marsh walking encounters.

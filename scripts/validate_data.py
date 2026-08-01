@@ -49,6 +49,13 @@ def find_option(pid: int, *, location: str, method: str, season: str, time: str)
     return None
 
 
+def has_option(pid: int, *, region: str, location: str, method: str) -> bool:
+    return any(
+        opt.get("region") == region and opt.get("location") == location and opt.get("method") == method
+        for opt in load(ROOT / "data" / "hunts" / f"{pid}.json")
+    )
+
+
 
 def has_invalid_dump_decoration(value: object) -> bool:
     text = str(value or "")
@@ -473,6 +480,29 @@ def main() -> int:
     if int(build_info.get("itemSprites", -1)) != len(held_item_ids):
         errors.append(f"build-info item sprite count is {build_info.get('itemSprites')}, expected {len(held_item_ids)} held-item icons.")
 
+    # Latest-dump Lure location corrections. These catch the most visible floor,
+    # room and species-slot changes so an older dump cannot silently be rebuilt.
+    lure_location_regressions = [
+        (5, "Kanto", "Rock Tunnel (1F)", "Lure Singles", True, "Charmeleon should use Rock Tunnel 1F"),
+        (5, "Kanto", "Rock Tunnel (B1F)", "Lure Singles", False, "Charmeleon should no longer use Rock Tunnel B1F"),
+        (65, "Sinnoh", "Route 215", "Lure Singles", True, "Alakazam should occupy the Route 215 Lure slot"),
+        (463, "Sinnoh", "Route 215", "Lure Singles", False, "Lickilicky should no longer occupy the Route 215 Lure slot"),
+        (94, "Kanto", "Pokémon Tower (3F)", "Lure Singles", True, "Gengar should use Pokémon Tower 3F"),
+        (94, "Kanto", "Pokémon Tower (7F)", "Lure Singles", False, "Gengar should no longer use Pokémon Tower 7F"),
+        (247, "Unova", "Victory Road (1F)", "Lure Singles", True, "Pupitar should use Unova Victory Road 1F"),
+        (247, "Unova", "Victory Road (7F)", "Lure Singles", False, "Pupitar should no longer use Unova Victory Road 7F"),
+        (429, "Johto", "Bell Tower (2F)", "Lure Singles", True, "Mismagius should use Bell Tower 2F"),
+        (429, "Johto", "Bell Tower (8F)", "Lure Singles", True, "Mismagius should use Bell Tower 8F"),
+        (479, "Sinnoh", "Old Chateau (1F)", "Lure Singles", True, "Rotom should use Old Chateau 1F"),
+        (479, "Sinnoh", "Old Chateau (2F)", "Lure Singles", False, "Rotom should no longer use Old Chateau 2F"),
+        (319, "Sinnoh", "Great Marsh — Area 1", "Lure Safari", True, "Sharpedo should use Great Marsh Area 1"),
+        (469, "Sinnoh", "Great Marsh — Area 1", "Lure Safari", True, "Yanmega should use Great Marsh Area 1"),
+    ]
+    for pid, region, location, method, expected_present, message in lure_location_regressions:
+        present = has_option(pid, region=region, location=location, method=method)
+        if present != expected_present:
+            errors.append(f"Latest Lure dump regression failed: {message}.")
+
     bulba = find_option(1, location="Viridian Forest", method="Lure Singles", season="Spring", time="Morning")
     if not bulba:
         errors.append("Bulbasaur Lure validation failed (missing Viridian Forest option).")
@@ -554,6 +584,7 @@ def main() -> int:
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")
     print("- Lure, globally Lure-exclusive, Special/phenomenon and Fossil Pokédex categories validated")
     print("- 100% horde species keep their labels but are excluded from the corresponding Split search")
+    print("- Latest corrected Lure floors, rooms, species slots and Safari areas validated")
     print("- Bulbasaur Lure-exclusive encounter roll = 5%")
     print("- Route 229 Autumn Night 5× Horde = Ariados 40%, Volbeat 30%, Illumise 30%")
     print("- Natural 5% horde blocks are included in Singles and Lure Singles, then extracted separately for Sweet Scent")
