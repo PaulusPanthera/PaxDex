@@ -98,6 +98,7 @@ def main() -> int:
         build_info = load(ROOT / "data" / "build-info.json")
         encounter_tables = load(ROOT / "data" / "encounter-tables.json")
         phase_previews = load(ROOT / "data" / "phase-previews.json")
+        training_index = load(ROOT / "data" / "training-index.json")
         safari_rates = load(ROOT / "data" / "safari-rates.json")
     except Exception as exc:
         print("VALIDATION FAILED")
@@ -475,6 +476,119 @@ def main() -> int:
         if region == "Sinnoh" and row.get("encounterType") == "Inside":
             errors.append(f"Sinnoh Great Marsh row {n} still uses the dump-internal Inside label.")
 
+    training_hordes = training_index.get("hordes", [])
+    maximum_ev_hordes = training_index.get("evHordes", [])
+    ev_categories = training_index.get("evCategories", [])
+    if int(build_info.get("trainingHordes", -1)) != len(training_hordes):
+        errors.append(f"build-info training horde count is {build_info.get('trainingHordes')}, training index contains {len(training_hordes)}.")
+    if int(build_info.get("maximumEvHordes", -1)) != len(maximum_ev_hordes):
+        errors.append(f"build-info maximum EV horde count is {build_info.get('maximumEvHordes')}, training index contains {len(maximum_ev_hordes)}.")
+    if int(build_info.get("evTrainingCategories", -1)) != len(ev_categories):
+        errors.append(f"build-info EV category count is {build_info.get('evTrainingCategories')}, training index contains {len(ev_categories)}.")
+
+    valid_ev_stats = {"HP", "Attack", "Defense", "Sp. Attack", "Sp. Defense", "Speed"}
+    requested_split_categories = {
+        "Attack / Speed": {"Attack", "Speed"},
+        "Sp. Attack / Speed": {"Sp. Attack", "Speed"},
+    }
+    expected_categories = valid_ev_stats | set(requested_split_categories)
+    category_ids = {row.get("id") for row in ev_categories}
+    if category_ids != expected_categories:
+        errors.append(f"EV training categories differ from the requested set: {sorted(category_ids)}.")
+
+    seen_training_signatures = set()
+    rows_by_table = {}
+    for row in training_hordes:
+        table_id = str(row.get("tableId"))
+        rows_by_table[table_id] = row
+        if table_id not in encounter_tables:
+            errors.append(f"Training row references missing encounter table {table_id}.")
+            continue
+        if row.get("method") != "5× Horde" or int(row.get("hordeSize", 0)) != 5:
+            errors.append(f"Training row {table_id} must be a 5× Horde, got {row.get('method')!r}/{row.get('hordeSize')!r}.")
+        if float(row.get("estimatedExp", 0) or 0) <= 0:
+            errors.append(f"Training row {table_id} has no positive EXP estimate.")
+        species = row.get("species", [])
+        if not species:
+            errors.append(f"Training row {table_id} has no species preview.")
+        for pair in row.get("availability", []):
+            if pair.get("season") not in VALID_SEASONS or pair.get("time") not in VALID_TIMES:
+                errors.append(f"Training row {table_id} has invalid availability {pair}.")
+
+        species_stats = {species_row.get("evStat") for species_row in species}
+        pure_stat = row.get("pureEvStat")
+        category = row.get("evCategory")
+        category_kind = row.get("evCategoryKind")
+        if pure_stat:
+            if pure_stat not in valid_ev_stats or species_stats != {pure_stat}:
+                errors.append(f"Training row {table_id} is marked pure {pure_stat!r} but its species yields do not match.")
+            if category != pure_stat or category_kind != "pure":
+                errors.append(f"Training row {table_id} does not map its pure EV stat to the same category.")
+        elif len(species_stats) == 1 and next(iter(species_stats), None) in valid_ev_stats:
+            errors.append(f"Training row {table_id} is a pure EV table but is not labelled as such.")
+
+        if category:
+            expected_ev_by_stat = {}
+            expected_pool_share = {}
+            for species_row in species:
+                stat = species_row.get("evStat")
+                ev_yield = int(species_row.get("evYield", 0) or 0)
+                share = float(species_row.get("share", 0) or 0)
+                if stat and ev_yield > 0:
+                    expected_ev_by_stat[stat] = expected_ev_by_stat.get(stat, 0.0) + share * 5 * ev_yield
+                    expected_pool_share[stat] = expected_pool_share.get(stat, 0.0) + share
+            expected_total = sum(expected_ev_by_stat.values())
+            if abs(expected_total - float(row.get("evExpected", 0) or 0)) > 0.011:
+                errors.append(f"Training row {table_id} EV estimate mismatch: {row.get('evExpected')} vs {expected_total:.2f}.")
+            actual_breakdown = {key: float(value) for key, value in row.get("evExpectedByStat", {}).items()}
+            actual_pool_share = {key: float(value) for key, value in row.get("evPoolShareByStat", {}).items()}
+            if set(actual_breakdown) != set(expected_ev_by_stat) or any(abs(actual_breakdown[key] - value) > 0.011 for key, value in expected_ev_by_stat.items()):
+                errors.append(f"Training row {table_id} EV-stat breakdown is inconsistent.")
+            if set(actual_pool_share) != set(expected_pool_share) or any(abs(actual_pool_share[key] - value) > 0.00001 for key, value in expected_pool_share.items()):
+                errors.append(f"Training row {table_id} EV pool-share breakdown is inconsistent.")
+            if category in requested_split_categories:
+                if category_kind != "split-50-50" or set(expected_pool_share) != requested_split_categories[category]:
+                    errors.append(f"Training row {table_id} is not the requested {category} split.")
+                if any(abs(value - 0.5) > 0.00001 for value in expected_pool_share.values()):
+                    errors.append(f"Training row {table_id} {category} pool is not exactly 50/50.")
+
+        signature = json.dumps({key: row.get(key) for key in ("region", "location", "encounterType", "method", "availability", "species")}, sort_keys=True)
+        if signature in seen_training_signatures:
+            errors.append(f"Training index contains a duplicate displayed horde row at table {table_id}.")
+        seen_training_signatures.add(signature)
+
+    max_by_category = {}
+    for category in expected_categories:
+        values = [float(row.get("evExpected") or 0) for row in training_hordes if row.get("evCategory") == category]
+        if values:
+            max_by_category[category] = max(values)
+    maximum_ids = {str(row.get("tableId")) for row in maximum_ev_hordes}
+    for row in maximum_ev_hordes:
+        table_id = str(row.get("tableId"))
+        category = row.get("evCategory")
+        if table_id not in rows_by_table:
+            errors.append(f"Maximum EV row {table_id} is absent from the complete 5× training index.")
+        if category not in max_by_category or abs(float(row.get("evExpected") or 0) - max_by_category[category]) > 0.000001:
+            errors.append(f"Maximum EV row {table_id} is not maximum-yield for {category!r}.")
+    expected_maximum_ids = {
+        str(row.get("tableId")) for row in training_hordes
+        if row.get("evCategory") in max_by_category
+        and abs(float(row.get("evExpected") or 0) - max_by_category[row.get("evCategory")]) <= 0.000001
+    }
+    if maximum_ids != expected_maximum_ids:
+        errors.append("Curated EV index does not contain exactly the maximum-yield rows for every category.")
+
+    category_max_metadata = {row.get("id"): float(row.get("maxExpected", 0) or 0) for row in ev_categories}
+    if set(category_max_metadata) != set(max_by_category) or any(abs(category_max_metadata[key] - value) > 0.011 for key, value in max_by_category.items()):
+        errors.append("EV category maximum-yield metadata does not match the generated rows.")
+
+    mt_silver_top = [row for row in training_hordes if row.get("location") == "Mt. Silver Cave (Upper Mountainside)"]
+    if not any(float(row.get("estimatedExp", 0)) >= 7900 for row in mt_silver_top):
+        errors.append("EXP training regression failed: Mt. Silver Upper Mountainside should contain an approximately 8,000 EXP horde.")
+    cerulean_golduck = [row for row in training_hordes if row.get("location") == "Cerulean Cave (B1F)" and [species.get("name") for species in row.get("species", [])] == ["Golduck"]]
+    if not any(7000 <= float(row.get("estimatedExp", 0)) <= 7300 for row in cerulean_golduck):
+        errors.append("EXP training regression failed: Cerulean Cave B1F Golduck should estimate near 7,125 EXP per horde.")
+
     if int(build_info.get("huntOptions", -1)) != hunt_count:
         errors.append(f"build-info hunt count is {build_info.get('huntOptions')}, generated files contain {hunt_count}.")
     if int(build_info.get("itemSprites", -1)) != len(held_item_ids):
@@ -577,6 +691,9 @@ def main() -> int:
     print("- Evolution roots, regions, encounter labels, methods, shares, seasons, times, table references and confidence values are valid")
     print("- No control characters or decorated dump prefixes leaked into published labels")
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
+    print(f"- {len(training_hordes):,} 5× horde training rows validated, with {len(maximum_ev_hordes):,} maximum-yield EV rows across {len(ev_categories)} categories")
+    print("- EV training contains only category-leading yields, including exact Attack/Speed and Sp. Attack/Speed 50/50 pools")
+    print("- EXP rankings use a transparent base-EXP × average-level ÷ 7 estimate and preserve season/time availability")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
     print("- Safari self-harm warnings are suppressed while global Pokédex warnings remain available")
     print("- Johto Safari biome names, Hoenn area numbers and Safari walking labels are normalized to Grass")

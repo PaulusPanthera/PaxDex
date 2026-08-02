@@ -150,6 +150,15 @@ DEX_CATEGORY_DEFS = [
 ]
 DEX_CATEGORY_ORDER = {row["id"]: index for index, row in enumerate(DEX_CATEGORY_DEFS)}
 
+EV_YIELD_FIELDS = {
+    "HP": "ev_hp",
+    "Attack": "ev_attack",
+    "Defense": "ev_defense",
+    "Sp. Attack": "ev_sp_attack",
+    "Sp. Defense": "ev_sp_defense",
+    "Speed": "ev_speed",
+}
+
 # Moves are checked against the actual four level-up moves a wild Pokémon can
 # know at each generated encounter level. The warning is deliberately broader
 # than instant self-KO: recoil, crash damage and delayed self-KO are also useful
@@ -1093,6 +1102,162 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         row["availability"].sort(key=lambda x: (season_order.get(x["season"], 99), time_order.get(x["time"], 99)))
     route_index.sort(key=lambda x: (x["region"], x["location"], x["method"], int(x["tableId"])))
     safe_json(data_dir / "route-index.json", route_index)
+
+    # Build one compact 5× horde-training index for the EV/EXP finder.
+    # EV mode is intentionally curated: only the maximum-yield rows for each
+    # pure stat are exposed, plus the requested 50/50 Attack/Speed and
+    # Sp. Attack/Speed split pools. EXP mode can still rank every 5× horde.
+    training_hordes: list[dict[str, Any]] = []
+    seen_training_signatures: set[str] = set()
+    dual_ev_pairs = {
+        frozenset(("Attack", "Speed")): "Attack / Speed",
+        frozenset(("Sp. Attack", "Speed")): "Sp. Attack / Speed",
+    }
+    for route_row in route_index:
+        method = str(route_row.get("method", ""))
+        if method != "5× Horde":
+            continue
+        table_id = str(route_row.get("tableId"))
+        table = encounter_tables.get(table_id, {})
+        components = table.get("components", [])
+        if not components:
+            continue
+        horde_size = 5
+        pure_stats: list[str] = []
+        species_rows: list[dict[str, Any]] = []
+        estimated_exp = 0.0
+        estimated_exp_min = 0.0
+        estimated_exp_max = 0.0
+        ev_expected_by_stat: dict[str, float] = defaultdict(float)
+        ev_pool_share_by_stat: dict[str, float] = defaultdict(float)
+        ev_total_values: list[float] = []
+
+        for component in components:
+            pid = int(component.get("pokemonId", 0))
+            yields = monsters.get(pid, {}).get("yields", {})
+            positive_ev_stats = [
+                label for label, field in EV_YIELD_FIELDS.items()
+                if int(yields.get(field, 0) or 0) > 0
+            ]
+            component_stat = positive_ev_stats[0] if len(positive_ev_stats) == 1 else None
+            pure_stats.append(component_stat or "")
+            ev_yield = int(yields.get(EV_YIELD_FIELDS.get(component_stat, ""), 0) or 0) if component_stat else 0
+            base_exp = float(yields.get("exp", 0) or 0)
+            min_level = int(component.get("minLevel", 0) or 0)
+            max_level = int(component.get("maxLevel", 0) or 0)
+            average_level = (min_level + max_level) / 2 if max_level >= min_level else min_level
+            share = float(component.get("share", 0) or 0)
+            estimated_exp += share * horde_size * base_exp * average_level / 7
+            estimated_exp_min += share * horde_size * base_exp * min_level / 7
+            estimated_exp_max += share * horde_size * base_exp * max_level / 7
+            if component_stat and ev_yield > 0:
+                ev_pool_share_by_stat[component_stat] += share
+                ev_expected_by_stat[component_stat] += share * horde_size * ev_yield
+                ev_total_values.append(horde_size * ev_yield)
+            species_rows.append({
+                "pokemonId": pid,
+                "name": component.get("name"),
+                "share": round(share, 7),
+                "minLevel": min_level,
+                "maxLevel": max_level,
+                "evStat": component_stat,
+                "evYield": ev_yield,
+                "baseExp": int(base_exp),
+            })
+
+        pure_ev_stat = pure_stats[0] if pure_stats and pure_stats[0] and len(set(pure_stats)) == 1 else None
+        ev_category = pure_ev_stat
+        ev_category_kind = "pure" if pure_ev_stat else None
+        if not pure_ev_stat and all(pure_stats):
+            pair_key = frozenset(ev_pool_share_by_stat)
+            pair_label = dual_ev_pairs.get(pair_key)
+            if pair_label and len(ev_pool_share_by_stat) == 2 and all(abs(share - 0.5) <= 0.000001 for share in ev_pool_share_by_stat.values()):
+                ev_category = pair_label
+                ev_category_kind = "split-50-50"
+
+        training_row = {
+            "tableId": table_id,
+            "region": route_row.get("region"),
+            "locationId": route_row.get("locationId"),
+            "location": route_row.get("location"),
+            "encounterType": route_row.get("encounterType"),
+            "method": method,
+            "hordeSize": horde_size,
+            "confidence": route_row.get("confidence"),
+            "availability": route_row.get("availability", []),
+            "levelMin": min(int(component.get("minLevel", 0) or 0) for component in components),
+            "levelMax": max(int(component.get("maxLevel", 0) or 0) for component in components),
+            "species": species_rows,
+            "pureEvStat": pure_ev_stat,
+            "evCategory": ev_category,
+            "evCategoryKind": ev_category_kind,
+            "evExpected": round(sum(ev_expected_by_stat.values()), 2) if ev_category else None,
+            "evExpectedByStat": {
+                stat: round(value, 2)
+                for stat, value in sorted(ev_expected_by_stat.items(), key=lambda item: list(EV_YIELD_FIELDS).index(item[0]))
+            } if ev_category else {},
+            "evPoolShareByStat": {
+                stat: round(value, 7)
+                for stat, value in sorted(ev_pool_share_by_stat.items(), key=lambda item: list(EV_YIELD_FIELDS).index(item[0]))
+            } if ev_category else {},
+            "evMin": min(ev_total_values) if ev_category and ev_total_values else None,
+            "evMax": max(ev_total_values) if ev_category and ev_total_values else None,
+            "estimatedExp": round(estimated_exp, 1),
+            "estimatedExpMin": round(estimated_exp_min, 1),
+            "estimatedExpMax": round(estimated_exp_max, 1),
+        }
+        signature = json.dumps({
+            key: training_row[key]
+            for key in ("region", "location", "encounterType", "method", "availability", "species")
+        }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if signature in seen_training_signatures:
+            continue
+        seen_training_signatures.add(signature)
+        training_hordes.append(training_row)
+
+    training_hordes.sort(key=lambda row: (
+        row["region"], row["location"],
+        tuple((pair["season"], pair["time"]) for pair in row["availability"]),
+        row["tableId"],
+    ))
+
+    ev_category_order = ["HP", "Attack", "Defense", "Sp. Attack", "Sp. Defense", "Speed", "Attack / Speed", "Sp. Attack / Speed"]
+    max_ev_by_category: dict[str, float] = {}
+    for category in ev_category_order:
+        values = [float(row.get("evExpected") or 0) for row in training_hordes if row.get("evCategory") == category]
+        if values:
+            max_ev_by_category[category] = max(values)
+    maximum_ev_hordes = [
+        row for row in training_hordes
+        if row.get("evCategory") in max_ev_by_category
+        and abs(float(row.get("evExpected") or 0) - max_ev_by_category[row["evCategory"]]) <= 0.000001
+    ]
+    maximum_ev_hordes.sort(key=lambda row: (
+        ev_category_order.index(row["evCategory"]),
+        -float(row.get("evExpected") or 0),
+        -float(row.get("estimatedExp") or 0),
+        row["region"], row["location"], row["tableId"],
+    ))
+
+    safe_json(data_dir / "training-index.json", {
+        "formula": {
+            "label": "Estimated base EXP per 5× horde",
+            "description": "Base EXP yield × average encounter level ÷ 7 × 5, weighted across split pools.",
+            "excludes": ["Exp. Share", "Lucky Egg", "party distribution", "other battle modifiers"],
+        },
+        "evCategories": [
+            {
+                "id": category,
+                "label": category,
+                "kind": "split-50-50" if "/" in category else "pure",
+                "maxExpected": round(max_ev_by_category.get(category, 0), 2),
+            }
+            for category in ev_category_order if category in max_ev_by_category
+        ],
+        "evHordes": maximum_ev_hordes,
+        "hordes": training_hordes,
+    })
+
     safe_json(data_dir / "encounter-tables.json", encounter_tables)
     safe_json(data_dir / "phase-previews.json", {
         str(table_id): [
@@ -1127,7 +1292,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     summary = {
         "pokemon": len(index), "huntOptions": hunt_count, "encounterTables": len(encounter_tables),
         "safariRateComponents": safari_component_count, "routeTables": len(route_index), "sprites": sprite_counts,
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.22",
+        "trainingHordes": len(training_hordes),
+        "maximumEvHordes": len(maximum_ev_hordes),
+        "evTrainingCategories": len(max_ev_by_category),
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.23",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

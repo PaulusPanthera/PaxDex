@@ -12,10 +12,13 @@ const state = {
   encounterTables: null,
   phasePreviews: null,
   routeIndex: null,
+  trainingIndex: null,
   activeHuntMap: new Map(),
   dexPage: 1,
   dexFilters: { query: "", category: "All", season: "All", time: "All", generation: "All", availability: "Obtainable" },
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
+  trainingFilters: { mode: "ev", stat: "HP", region: "All", season: "All", time: "All" },
+  trainingVisible: 40,
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
   hunterSelectedId: null,
   hunterPickerOutsideHandler: null,
@@ -325,6 +328,10 @@ async function getRouteIndex() {
   if (!state.routeIndex) state.routeIndex = await fetchJSON("data/route-index.json");
   return state.routeIndex;
 }
+async function getTrainingIndex() {
+  if (!state.trainingIndex) state.trainingIndex = await fetchJSON("data/training-index.json");
+  return state.trainingIndex;
+}
 
 function setActiveNav(route) {
   $$("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === route));
@@ -581,7 +588,7 @@ function renderHome() {
     <div class="hero-copy">
       <span class="eyebrow">PokeMMO encounter field guide</span>
       <h1>Find a Pokémon.<br><span>Find its best hunt.</span></h1>
-      <p>A compact field guide built around one question: where and when should I hunt this Pokémon? Browse clean species pages, inspect exact encounter splits, or compare every route for one form or its full evolution line.</p>
+      <p>A compact field guide built around one question: where and when should I hunt this Pokémon? Browse clean species pages, inspect exact encounter splits, compare shiny routes, or find pure EV and high-yield EXP hordes.</p>
       <form class="search-panel" id="home-search">
         <input name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Search Bulbasaur, Pikachu, #133…" aria-label="Search Pokémon">
         <button class="pixel-btn" type="submit">Open Pokédex</button>
@@ -589,6 +596,7 @@ function renderHome() {
       <div class="quick-links">
         <a class="pixel-btn secondary" href="#dex">Browse all Pokémon</a>
         <a class="pixel-btn ghost" href="#hunter">Plan a shiny hunt</a>
+        <a class="pixel-btn ghost" href="#training">Find training hordes</a>
       </div>
       ${recentMons.length ? `<div style="margin-top:28px"><strong>Recently viewed</strong><div class="chip-list" style="margin-top:9px">${recentMons.map(p => `<button class="chip" data-open-pokemon="${p.id}">${escapeHtml(p.name)}</button>`).join("")}</div></div>` : ""}
     </div>
@@ -1226,6 +1234,151 @@ async function renderRouteSearcher() {
   }));
 }
 
+
+const TRAINING_EV_CATEGORY_FALLBACK = [
+  { id: "HP", label: "HP", kind: "pure" },
+  { id: "Attack", label: "Attack", kind: "pure" },
+  { id: "Defense", label: "Defense", kind: "pure" },
+  { id: "Sp. Attack", label: "Sp. Attack", kind: "pure" },
+  { id: "Sp. Defense", label: "Sp. Defense", kind: "pure" },
+  { id: "Speed", label: "Speed", kind: "pure" },
+  { id: "Attack / Speed", label: "Attack / Speed", kind: "split-50-50" },
+  { id: "Sp. Attack / Speed", label: "Sp. Attack / Speed", kind: "split-50-50" },
+];
+
+function trainingAvailabilityMatches(row, season, time) {
+  return (row.availability || []).some(pair =>
+    (season === "All" || pair.season === season || pair.season === "Any") &&
+    (time === "All" || pair.time === time)
+  );
+}
+
+function trainingSpeciesPreview(row, { evMode = false } = {}) {
+  const species = row.species || [];
+  const splitPool = evMode && row.evCategoryKind === "split-50-50";
+  return `<div class="training-species-list">${species.map(component => {
+    const poolShare = formatPercent(component.share || 0);
+    const evText = evMode && component.evStat ? ` · ${component.evYield} ${component.evStat} EV${Number(component.evYield) === 1 ? "" : "s"} each` : "";
+    const title = `${component.name} · Lv. ${component.minLevel || "?"}–${component.maxLevel || "?"}${evText} · ${poolShare} of hordes`;
+    const detail = evMode
+      ? `<small>${component.evYield} ${escapeHtml(component.evStat || "Mixed")}${splitPool ? `<b>${poolShare}</b>` : ""}</small>`
+      : `<small>${poolShare} of hordes</small>`;
+    return `<a class="training-species" href="#pokemon/${component.pokemonId}" title="${escapeHtml(title)}">${imageTag(component.pokemonId, component.name, { icon:true })}<span>${escapeHtml(component.name)}</span>${detail}</a>`;
+  }).join("")}</div>`;
+}
+
+function trainingRowAsHunt(row) {
+  return {
+    ...row,
+    uiKey: `training-${row.tableId}`,
+    minLevel: row.levelMin,
+    maxLevel: row.levelMax,
+  };
+}
+
+function trainingEvBreakdown(row) {
+  return Object.entries(row.evExpectedByStat || {})
+    .map(([stat, value]) => `${formatNumber(value, Number(value) % 1 ? 1 : 0)} ${escapeHtml(stat)}`)
+    .join(" · ");
+}
+
+function trainingCard(row, rank, mode) {
+  const isEv = mode === "ev";
+  const splitPool = isEv && row.evCategoryKind === "split-50-50";
+  const variableEv = isEv && Number(row.evMin) !== Number(row.evMax);
+  const score = isEv
+    ? variableEv ? `${formatNumber(row.evExpected, 1)} avg EV` : `${formatNumber(row.evExpected, 0)} EV`
+    : `≈ ${formatNumber(row.estimatedExp, 0)}`;
+  const scoreLabel = isEv
+    ? splitPool
+      ? `per horde · 50% ${escapeHtml(row.evCategory.replace(" / ", " / 50% "))}`
+      : variableEv
+        ? `${formatNumber(row.evMin, 0)}–${formatNumber(row.evMax, 0)} ${escapeHtml(row.evCategory)} EV per horde`
+        : `${escapeHtml(row.evCategory)} per horde`
+    : `estimated EXP per horde`;
+  const detailLine = isEv
+    ? splitPool
+      ? `<span class="training-purity split">50/50 mixed pool</span><span>${trainingEvBreakdown(row)} expected over time</span>`
+      : `<span class="training-purity">Maximum-yield ${escapeHtml(row.evCategory)} pool</span>`
+    : `<span>${formatNumber(row.estimatedExpMin, 0)}–${formatNumber(row.estimatedExpMax, 0)} level-range estimate</span>`;
+  return `<article class="training-card">
+    <div class="training-rank">${rank}</div>
+    <div class="training-card-body">
+      <div class="training-card-title"><div><h3>${escapeHtml(row.location)}</h3><p>${escapeHtml(row.region)} · ${escapeHtml(row.encounterType)} · 5× Horde · Lv. ${row.levelMin || "?"}–${row.levelMax || "?"}</p></div><div class="training-card-score"><strong>${score}</strong><small>${scoreLabel}</small></div></div>
+      ${trainingSpeciesPreview(row, { evMode:isEv })}
+      <div class="training-card-foot"><div class="availability-feature" title="${escapeHtml(availabilityLabel(row.availability || []))}">${availabilityVisual(row.availability || [])}</div><div class="training-card-meta">${detailLine}<span>${escapeHtml(row.confidence || "High")} confidence</span></div><button class="pixel-btn small" type="button" data-training-table="${row.tableId}">View full split</button></div>
+    </div>
+  </article>`;
+}
+
+async function renderTraining() {
+  setActiveNav("training");
+  setPageTitle("EV & EXP Training");
+  $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Sorting maximum-yield EV and high-EXP 5× hordes…</p></section>`;
+  const training = await getTrainingIndex();
+  const f = state.trainingFilters;
+  const isEv = f.mode === "ev";
+  const evCategories = training.evCategories?.length ? training.evCategories : TRAINING_EV_CATEGORY_FALLBACK;
+  if (!evCategories.some(category => category.id === f.stat)) f.stat = evCategories[0]?.id || "HP";
+  const sourceRows = isEv ? (training.evHordes || []) : (training.hordes || []);
+  const rows = sourceRows.filter(row => {
+    if (isEv && row.evCategory !== f.stat) return false;
+    if (f.region !== "All" && row.region !== f.region) return false;
+    return trainingAvailabilityMatches(row, f.season, f.time);
+  }).sort((a, b) => isEv
+    ? Number(b.estimatedExp || 0) - Number(a.estimatedExp || 0) || a.region.localeCompare(b.region) || a.location.localeCompare(b.location)
+    : Number(b.estimatedExp || 0) - Number(a.estimatedExp || 0) || Number(b.levelMax || 0) - Number(a.levelMax || 0) || a.location.localeCompare(b.location)
+  );
+  const regions = ["All", ...new Set(sourceRows.map(row => row.region))];
+  const selectedCategory = evCategories.find(category => category.id === f.stat);
+  const selectedIsSplit = selectedCategory?.kind === "split-50-50";
+  const resultLabel = isEv
+    ? `${selectedIsSplit ? "maximum-yield 50/50" : "maximum-yield pure"} 5× horde ${rows.length === 1 ? "spot" : "spots"}`
+    : `EXP-ranked 5× horde ${rows.length === 1 ? "spot" : "spots"}`;
+  const top = rows[0];
+  const visibleRows = rows.slice(0, state.trainingVisible);
+  const remainingRows = Math.max(0, rows.length - visibleRows.length);
+  const topSummary = top ? isEv
+    ? selectedIsSplit
+      ? `${top.location} gives ${formatNumber(top.evExpected, 0)} total EV per horde, with a 50% chance for either ${top.evCategory.replace(" / ", " or ")}.`
+      : `${top.location} gives the maximum ${Number(top.evMin) === Number(top.evMax) ? `${formatNumber(top.evExpected, 0)} guaranteed` : `${formatNumber(top.evExpected, 1)} average`} ${top.evCategory} EV per horde.`
+    : `${top.location} currently leads at approximately ${formatNumber(top.estimatedExp, 0)} base EXP per horde.`
+    : "No 5× horde matches the selected filters.";
+
+  $("#app").innerHTML = `<section class="training-page">
+    <div class="section-head"><div><span class="eyebrow">5× horde training finder</span><h1 class="page-title">EV & EXP Training</h1><p>Find only the strongest EV-training pools or compare 5× hordes by estimated experience.</p></div></div>
+    <div class="training-mode-tabs" role="tablist" aria-label="Training mode">
+      <button type="button" role="tab" aria-selected="${isEv}" class="${isEv ? "active" : ""}" data-training-mode="ev"><strong>EV Training</strong><small>Maximum-yield 5× hordes only</small></button>
+      <button type="button" role="tab" aria-selected="${!isEv}" class="${!isEv ? "active" : ""}" data-training-mode="exp"><strong>EXP Training</strong><small>Highest estimated 5× horde EXP</small></button>
+    </div>
+    ${isEv ? `<div class="training-stat-tabs training-category-tabs" role="group" aria-label="EV category">${evCategories.map(category => `<button type="button" class="${category.id === f.stat ? "active" : ""} ${category.kind === "split-50-50" ? "split" : ""}" data-training-stat="${escapeHtml(category.id)}"><span>${escapeHtml(category.label)}</span>${category.kind === "split-50-50" ? `<small>50/50</small>` : `<small>Max ${formatNumber(category.maxExpected || 0, Number(category.maxExpected || 0) % 1 ? 1 : 0)} EV</small>`}</button>`).join("")}</div>` : ""}
+    <div class="training-toolbar">
+      <label class="field"><span>Region</span><select id="training-region">${regions.map(region => `<option value="${escapeHtml(region)}" ${region === f.region ? "selected" : ""}>${escapeHtml(region)}</option>`).join("")}</select></label>
+      <label class="field"><span>Season</span><select id="training-season"><option value="All">All seasons</option>${["Spring","Summer","Autumn","Winter"].map(value => `<option value="${value}" ${value === f.season ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      <label class="field"><span>Time</span><select id="training-time"><option value="All">Any time</option>${["Morning","Day","Night"].map(value => `<option value="${value}" ${value === f.time ? "selected" : ""}>${value}</option>`).join("")}</select></label>
+      <button class="pixel-btn ghost" id="training-reset" type="button">Reset</button>
+    </div>
+    <div class="training-explainer ${isEv ? "ev" : "exp"}">
+      <div><strong>${isEv ? selectedIsSplit ? "These pools are exactly 50/50 between the two listed EV stats." : "Only the highest EV yield found for this stat is shown." : "EXP values are comparable estimates, not exact battle payouts."}</strong><span>${isEv ? selectedIsSplit ? "Each individual horde awards one stat or the other; the displayed split is the chance of receiving each horde. Lower-yield 50/50 pools are excluded." : "Every possible Pokémon awards the selected stat. Lower-yield 5× hordes and all 3× hordes are excluded. Values are before Macho Brace or other modifiers." : "Estimate: base EXP yield × average encounter level ÷ 7 × 5, weighted across split pools. Exp. Share, Lucky Egg and party modifiers are not applied."}</span></div>
+      <b>${escapeHtml(topSummary)}</b>
+    </div>
+    <div class="training-results-head"><div><h2>${isEv ? `${escapeHtml(f.stat)} spots` : "Best EXP hordes"}</h2><p>${rows.length.toLocaleString()} ${resultLabel}</p></div>${top ? `<div class="training-best-chip"><span>Best match</span><strong>${escapeHtml(top.location)}</strong></div>` : ""}</div>
+    ${rows.length ? `<div class="training-list">${visibleRows.map((row, index) => trainingCard(row, index + 1, f.mode)).join("")}</div>${remainingRows ? `<div class="training-load-more"><button class="pixel-btn secondary" id="training-more" type="button">Show ${Math.min(40, remainingRows)} more <small>${remainingRows.toLocaleString()} remaining</small></button></div>` : ""}` : `<div class="empty-state"><h2>No matching 5× horde found</h2><p>Try another EV category, region, season or time.</p></div>`}
+  </section>`;
+
+  $$('[data-training-mode]').forEach(button => button.addEventListener('click', () => { f.mode = button.dataset.trainingMode; state.trainingVisible = 40; renderTraining(); }));
+  $$('[data-training-stat]').forEach(button => button.addEventListener('click', () => { f.stat = button.dataset.trainingStat; state.trainingVisible = 40; renderTraining(); }));
+  $("#training-region").addEventListener("change", event => { f.region = event.target.value; state.trainingVisible = 40; renderTraining(); });
+  $("#training-season").addEventListener("change", event => { f.season = event.target.value; state.trainingVisible = 40; renderTraining(); });
+  $("#training-time").addEventListener("change", event => { f.time = event.target.value; state.trainingVisible = 40; renderTraining(); });
+  $("#training-reset").addEventListener("click", () => { state.trainingFilters = { mode:f.mode, stat:"HP", region:"All", season:"All", time:"All" }; state.trainingVisible = 40; renderTraining(); });
+  $("#training-more")?.addEventListener("click", () => { state.trainingVisible += 40; renderTraining(); });
+  $$('[data-training-table]').forEach(button => button.addEventListener('click', () => {
+    const row = rows.find(item => String(item.tableId) === String(button.dataset.trainingTable));
+    if (row) openEncounterSplit(trainingRowAsHunt(row), []).catch(error => { console.error(error); toast("Could not load the encounter split"); });
+  }));
+}
+
 function renderSettings() {
   setActiveNav("settings");
   setPageTitle("Settings");
@@ -1304,7 +1457,7 @@ function renderAbout() {
   setPageTitle("About");
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
     <div class="about-simple-grid">
-      <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits and route comparisons by method, season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
+      <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits, route comparisons and pure EV/EXP horde rankings by season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
       <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
       <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
@@ -1336,6 +1489,7 @@ async function renderRoute() {
     else if (route === "pokemon") await renderPokemon(Number(arg));
     else if (route === "hunter") await renderHunter(arg ? Number(arg) : null);
     else if (route === "routes") await renderRouteSearcher();
+    else if (route === "training") await renderTraining();
     else if (route === "favorites") renderFavorites();
     else if (route === "settings") renderSettings();
     else if (route === "about") renderAbout();
@@ -1354,8 +1508,8 @@ async function init() {
     state.pokemonById = new Map(state.pokemon.map(p=>[p.id,p]));
     $("#pokemon-list").innerHTML = state.pokemon.map(p=>`<option value="${escapeHtml(p.name)}">#${String(p.id).padStart(3,"0")}</option>`).join("");
     const s = settings();
-    if (s.lockSeason && s.currentSeason !== "All") state.hunterFilters.season = s.currentSeason;
-    if (s.lockTime && s.currentTime !== "All") state.hunterFilters.time = s.currentTime;
+    if (s.lockSeason && s.currentSeason !== "All") { state.hunterFilters.season = s.currentSeason; state.trainingFilters.season = s.currentSeason; }
+    if (s.lockTime && s.currentTime !== "All") { state.hunterFilters.time = s.currentTime; state.trainingFilters.time = s.currentTime; }
     applyTheme(s.theme);
     $("#theme-toggle")?.addEventListener("click", toggleTheme);
     matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (settings().theme === "system") applyTheme("system"); });

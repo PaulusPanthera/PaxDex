@@ -1595,3 +1595,98 @@ html[data-theme="dark"] .best-hunt .chip.safari-pool-badge {
   background:#463817;
   border-color:#e5bd4a;
 }
+
+
+/* PaxDex v0.23: EV and EXP horde training finder */
+.training-page { min-width:0; }
+.training-mode-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:14px; }
+.training-mode-tabs button { display:grid; gap:4px; padding:15px 18px; color:var(--ink); text-align:left; background:var(--paper); border:3px solid var(--ink); box-shadow:4px 4px 0 var(--shadow); cursor:pointer; }
+.training-mode-tabs button strong { font-size:1.05rem; }
+.training-mode-tabs button small { color:var(--muted); }
+.training-mode-tabs button.active { background:var(--yellow); transform:translate(2px,2px); box-shadow:2px 2px 0 var(--shadow); }
+.training-stat-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin:18px 0 12px; }
+.training-stat-tabs button { min-height:50px; padding:8px 7px; color:var(--ink); background:var(--paper-2); border:3px solid var(--ink); font-weight:900; cursor:pointer; display:grid; place-items:center; gap:2px; }
+.training-stat-tabs button small { color:var(--muted); font-size:.62rem; }
+.training-stat-tabs button.split { background:#fff0c7; }
+.training-stat-tabs button.split small { color:#76530f; }
+.training-stat-tabs button.active { color:#fff; background:var(--green); box-shadow:3px 3px 0 var(--shadow); }
+.training-stat-tabs button.active small { color:#e4f2e8; }
+.training-toolbar { display:grid; grid-template-columns:repeat(3,minmax(130px,1fr)) auto; gap:10px; align-items:end; padding:14px; background:var(--paper); border:4px solid var(--ink); box-shadow:5px 5px 0 var(--shadow); }
+.training-toolbar .field > span { font-size:.72rem; color:var(--muted); font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.training-explainer { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(240px,.5fr); gap:16px; align-items:center; margin:18px 0 22px; padding:15px 17px; background:#e8f1d6; border:3px solid var(--green); }
+.training-explainer.exp { background:#fff0c7; border-color:#b67a12; }
+.training-explainer > div { display:grid; gap:4px; }
+.training-explainer span { color:var(--muted); line-height:1.45; }
+.training-explainer > b { padding-left:16px; border-left:3px solid currentColor; line-height:1.45; }
+.training-results-head { display:flex; align-items:end; justify-content:space-between; gap:18px; margin:0 0 13px; }
+.training-results-head h2 { margin:0 0 3px; font-size:clamp(1.45rem,4vw,2.2rem); }
+.training-results-head p { margin:0; color:var(--muted); }
+.training-best-chip { min-width:180px; display:grid; gap:2px; padding:9px 12px; color:#fff; background:var(--green); border:3px solid var(--ink); text-align:right; }
+.training-best-chip span { font-size:.66rem; font-weight:900; text-transform:uppercase; letter-spacing:.08em; }
+.training-list { display:grid; gap:12px; }
+.training-card { display:grid; grid-template-columns:48px minmax(0,1fr); gap:13px; padding:15px; background:var(--paper); border:3px solid var(--ink); box-shadow:4px 4px 0 var(--shadow); }
+.training-rank { width:43px; height:43px; display:grid; place-items:center; color:#fff; background:var(--green); border:3px solid var(--ink); font:900 .9rem Consolas,monospace; }
+.training-card-body { min-width:0; display:grid; gap:10px; }
+.training-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.training-card-title h3 { margin:0 0 3px; font-size:1.12rem; }
+.training-card-title p { margin:0; color:var(--muted); font-size:.8rem; }
+.training-card-score { flex:0 0 auto; min-width:150px; text-align:right; }
+.training-card-score strong { display:block; color:var(--green); font:900 1.35rem Consolas,monospace; }
+.training-card-score small { display:block; color:var(--muted); font-size:.69rem; }
+.training-species-list { display:flex; flex-wrap:wrap; gap:7px; min-width:0; }
+.training-species { width:78px; min-height:72px; display:grid; grid-template-rows:38px auto auto; place-items:center; align-content:center; gap:1px; padding:5px; color:var(--ink); background:var(--paper-2); border:2px solid #8a948d; text-decoration:none; text-align:center; }
+.training-species:hover { border-color:var(--green); transform:translateY(-1px); }
+.training-species img { width:38px; height:38px; object-fit:contain; image-rendering:pixelated; }
+.training-species span { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.68rem; font-weight:900; }
+.training-species small { color:var(--muted); font-size:.6rem; display:grid; gap:1px; }
+.training-species small b { color:var(--green); font-size:.58rem; }
+.training-card-foot { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:12px; align-items:center; padding-top:10px; border-top:2px dashed rgba(32,51,42,.28); }
+.training-card-foot .availability-feature { margin:0; }
+.training-card-meta { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.training-card-meta span { padding:4px 6px; color:var(--muted); background:var(--paper-2); border:1px solid #aaa78f; font-size:.67rem; }
+.training-card-meta .training-purity { color:#fff; background:var(--green); border-color:var(--ink); font-weight:900; }
+.training-card-meta .training-purity.split { color:var(--ink); background:var(--yellow); }
+html[data-theme="dark"] .training-mode-tabs button,
+html[data-theme="dark"] .training-toolbar,
+html[data-theme="dark"] .training-card { background:#1b2b24; }
+html[data-theme="dark"] .training-mode-tabs button.active { color:var(--ink); background:var(--yellow); }
+html[data-theme="dark"] .training-stat-tabs button { color:#eef6f0; background:#22342b; }
+html[data-theme="dark"] .training-stat-tabs button.active { background:var(--green); }
+html[data-theme="dark"] .training-stat-tabs button.split:not(.active) { background:#463819; }
+html[data-theme="dark"] .training-stat-tabs button.split:not(.active) small { color:#e4c66e; }
+html[data-theme="dark"] .training-explainer { color:#eef6f0; background:#203b2b; }
+html[data-theme="dark"] .training-explainer.exp { background:#463819; border-color:#d5a840; }
+html[data-theme="dark"] .training-explainer span { color:#c0d0c6; }
+html[data-theme="dark"] .training-species,
+html[data-theme="dark"] .training-card-meta span { color:#eef6f0; background:#24352d; border-color:#65756c; }
+html[data-theme="dark"] .training-card-meta .training-purity { background:var(--green); border-color:#dbe9df; }
+@media (max-width:900px) {
+  .training-stat-tabs { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .training-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .training-toolbar .pixel-btn { width:100%; }
+  .training-explainer { grid-template-columns:1fr; }
+  .training-explainer > b { padding:12px 0 0; border-left:0; border-top:3px solid currentColor; }
+  .training-card-foot { grid-template-columns:1fr auto; }
+  .training-card-meta { justify-content:flex-start; }
+  .training-card-foot .pixel-btn { grid-column:2; grid-row:1/3; }
+}
+@media (max-width:620px) {
+  .training-mode-tabs { grid-template-columns:1fr; }
+  .training-stat-tabs { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .training-toolbar { grid-template-columns:1fr; }
+  .training-results-head { align-items:flex-start; flex-direction:column; }
+  .training-best-chip { width:100%; text-align:left; }
+  .training-card { grid-template-columns:38px minmax(0,1fr); padding:11px; gap:9px; }
+  .training-rank { width:35px; height:35px; }
+  .training-card-title { display:grid; }
+  .training-card-score { min-width:0; text-align:left; }
+  .training-species-list { flex-wrap:nowrap; overflow-x:auto; padding-bottom:5px; scrollbar-width:thin; }
+  .training-species { min-width:76px; }
+  .training-card-foot { grid-template-columns:1fr; }
+  .training-card-foot .pixel-btn { grid-column:auto; grid-row:auto; justify-self:start; }
+}
+
+.training-species .sprite-placeholder { width:38px; height:38px; border-width:2px; font-size:.55rem; }
+.training-load-more { display:flex; justify-content:center; margin:20px 0 4px; }
+.training-load-more .pixel-btn { min-width:230px; display:flex; flex-wrap:wrap; }
+.training-load-more small { font-weight:700; opacity:.75; }

@@ -1,3 +1,15 @@
+# PaxDex v0.23
+
+- Added a dedicated **Training** tab for EV and EXP training.
+- EV Training now shows **5× hordes only** and filters out every lower-yield option.
+- Each pure EV category contains only the highest-yield spots currently present in the dump.
+- Added dedicated **Attack / Speed 50/50** and **Sp. Attack / Speed 50/50** categories.
+- The 50/50 categories only include exact split pools at their maximum total yield; lower-yield mixed pools are excluded.
+- EV cards show the total EV yield, per-stat expectation, species pool split, season and time.
+- EXP Training ranks all 5× hordes using a transparent estimate based on base EXP yield, average level and encounter share.
+- Added region, season and time filters plus compact pagination for large result sets.
+- Generated and validated 2,145 unique 5× training rows and 395 maximum-yield EV rows across eight categories.
+
 # PaxDex v0.22
 
 - Rebuilt PaxDex from the newest corrected PokeMMO Pokédex dump.
