@@ -1,24 +1,30 @@
-PAXDEX v0.23 · EV & EXP TRAINING FINDER
+PAXDEX v0.24 · CONTEXT-AWARE SHINY SAFETY
 
-Open locally with START_PAXDEX.bat or publish the repository through GitHub Pages.
+A static PokeMMO Pokédex, shiny hunting route finder, Route Searcher and EV/EXP training finder.
 
-NEW IN v0.23
-- Added a dedicated Training tab for EV and EXP training.
-- EV Training shows only maximum-yield 5× horde spots.
-- Pure categories are available for HP, Attack, Defense, Sp. Attack, Sp. Defense and Speed.
-- Added exact 50/50 Attack / Speed and Sp. Attack / Speed categories.
-- Lower-yield pure and mixed EV pools, together with all 3× hordes, are excluded from EV results.
-- EXP Training ranks all 5× hordes using base EXP yield, average level and encounter share.
-- Filter by region, season and time.
+NEW IN v0.24
+- Shared context-aware wild safety rules
+- Rage Powder and Follow Me warnings for multi-opponent encounters
+- Belly Drum, Teleport, Sticky Barb, Sketch, Transform and held-item swap warnings
+- Correct Perish Song handling for hordes
+- Detailed preparation advice inside full encounter splits
+- Safari battle and slowdown warnings fully suppressed
 
-DATA
+CORE DATA
 - 649 Pokémon
 - 58,375 hunt options
-- 12,400 complete generated encounter-table views
-- 2,145 unique 5× training-horde rows
+- 12,400 encounter tables / Route Searcher rows
+- 2,145 ranked 5× training hordes
 - 395 maximum-yield EV rows across 8 categories
-- Source: input/dump.zip
 
-UPDATE DATA
+SOURCE AND REBUILD
+- Source: input/dump.zip
+- Builder: scripts/build_data.py
+- Validator: scripts/validate_data.py
+- Shared safety rules: shared/safety-rules.json
+
 Place a fresh dump at input/dump.zip and run UPDATE_FROM_DUMP.bat.
-The builder reapplies Safari mappings, encounter categories, warnings, training calculations and all generated hunt calculations automatically.
+Run VALIDATE_DATA.bat before publishing.
+
+Made from the PokeMMO Pokédex dump with AI usage by [MÜSH] PaulusPax.
+Unofficial fan project; not affiliated with PokeMMO or its developers.

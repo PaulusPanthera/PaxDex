@@ -100,10 +100,24 @@ def main() -> int:
         phase_previews = load(ROOT / "data" / "phase-previews.json")
         training_index = load(ROOT / "data" / "training-index.json")
         safari_rates = load(ROOT / "data" / "safari-rates.json")
+        safety_rules = load(ROOT / "data" / "safety-rules.json")
     except Exception as exc:
         print("VALIDATION FAILED")
         print(f"- Could not load core data: {exc}")
         return 1
+
+    shared_safety_path = ROOT / "shared" / "safety-rules.json"
+    if not shared_safety_path.exists():
+        errors.append("Missing shared/safety-rules.json.")
+    else:
+        try:
+            shared_safety_rules = load(shared_safety_path)
+            if shared_safety_rules != safety_rules:
+                errors.append("Generated safety-rules.json differs from the shared source rules.")
+        except Exception as exc:
+            errors.append(f"Invalid shared safety rules: {exc}")
+    if not safety_rules.get("rules") or int(safety_rules.get("schemaVersion", 0)) < 1:
+        errors.append("Safety rules are missing or use an invalid schema version.")
 
     ids = [int(p["id"]) for p in index]
     if len(ids) != len(set(ids)):
@@ -172,8 +186,10 @@ def main() -> int:
         if table.get("encounterType") not in VALID_ENCOUNTER_TYPES:
             errors.append(f"Encounter table {table_id} has invalid encounter type {table.get('encounterType')!r}.")
         if table.get("safari"):
-            if table.get("selfHarmWarningsApplicable") is not False:
-                errors.append(f"Safari encounter table {table_id} must suppress self-harm warnings in Safari contexts.")
+            if table.get("safetyWarningsApplicable") is not False:
+                errors.append(f"Safari encounter table {table_id} must suppress safety warnings in Safari contexts.")
+            if table.get("slowdownWarningsApplicable") is not False:
+                errors.append(f"Safari encounter table {table_id} must suppress start-delay warnings in Safari contexts.")
             pool = table.get("safariPool") or {}
             if not pool.get("status") or not pool.get("label"):
                 errors.append(f"Safari encounter table {table_id} is missing source-coverage metadata.")
@@ -194,11 +210,11 @@ def main() -> int:
         if len(ids_in_table) != len(set(ids_in_table)):
             errors.append(f"Encounter table {table_id} contains duplicate Pokémon components.")
         expected_preview = [
-            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("selfHarmRisks", []))
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("safetyRisks", []))
             for c in components
         ]
         actual_preview = [
-            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("selfHarmRisks", []))
+            (int(c.get("pokemonId", 0)), c.get("name"), round(float(c.get("share", 0)), 7), c.get("safetyRisks", []))
             for c in phase_previews.get(str(table_id), [])
         ]
         if actual_preview != expected_preview:
@@ -208,13 +224,34 @@ def main() -> int:
                 if ability not in component.get("abilities", []):
                     errors.append(f"Encounter table {table_id} marks unknown slowdown ability {ability!r}.")
             risk_keys = set()
-            for risk in component.get("selfHarmRisks", []):
+            risks = component.get("safetyRisks", [])
+            if table.get("safari") and risks:
+                errors.append(f"Safari encounter table {table_id} contains active safety warnings for #{component.get('pokemonId')}.")
+            source_kinds = {str(source.get("kind", "")) for source in component.get("sources", [])}
+            explicit_horde = table.get("method") in {"5× Horde", "3× Horde"}
+            horde_source = explicit_horde or bool(source_kinds & {"horde", "sweet-scent"})
+            single_source = bool(source_kinds & {"single", "lure"})
+            lure_double = table.get("method") == "Lure Singles" and not table.get("safari")
+            dark_grass_double = table.get("encounterType") == "Dark Grass" and not table.get("safari")
+            multiple_opponents = horde_source or lure_double or dark_grass_double
+            horde_only = explicit_horde or (horde_source and not single_source and not lure_double and not dark_grass_double)
+            for risk in risks:
                 key = (risk.get("kind"), risk.get("name"))
                 if key in risk_keys:
-                    errors.append(f"Encounter table {table_id} contains duplicate wild risk {key!r}.")
+                    errors.append(f"Encounter table {table_id} contains duplicate safety risk {key!r}.")
                 risk_keys.add(key)
-                if risk.get("kind") not in {"move", "ability"} or not risk.get("name") or not risk.get("description"):
-                    errors.append(f"Encounter table {table_id} contains an invalid wild risk entry: {risk!r}.")
+                if risk.get("kind") not in {"move", "ability", "held-item", "compound"}:
+                    errors.append(f"Encounter table {table_id} contains an invalid safety-risk kind: {risk!r}.")
+                if risk.get("severity") not in {"critical", "warning", "preparation"}:
+                    errors.append(f"Encounter table {table_id} contains an invalid safety severity: {risk!r}.")
+                if not all(risk.get(field) for field in ("name", "category", "description", "preparation", "verification")):
+                    errors.append(f"Encounter table {table_id} contains an incomplete safety risk entry: {risk!r}.")
+                if risk.get("name") == "Perish Song" and horde_only:
+                    errors.append(f"Perish Song is incorrectly active in horde-only table {table_id}.")
+                if risk.get("name") in {"Rage Powder", "Follow Me"} and not multiple_opponents:
+                    errors.append(f"Redirection risk {risk.get('name')} is active in single-only table {table_id}.")
+                if risk.get("name") in {"Dry Skin", "Solar Power", "Healing Wish", "Lunar Dance"}:
+                    errors.append(f"Unverified/context-missing safety rule {risk.get('name')} is active in table {table_id}.")
             capture = component.get("safariCapture")
             if capture and not (0 < float(capture.get("ballsOnlySuccess", 0)) <= 1):
                 errors.append(f"Encounter table {table_id} has invalid Safari catch estimate.")
@@ -265,13 +302,54 @@ def main() -> int:
         errors.append("Normal-ability slowdown regression failed: Growlithe Intimidate is not marked.")
 
     voltorb_selfdestruct = any(
-        int(component.get("pokemonId", -1)) == 100 and any(risk.get("name") == "Selfdestruct" for risk in component.get("selfHarmRisks", []))
+        int(component.get("pokemonId", -1)) == 100 and any(risk.get("name") == "Selfdestruct" for risk in component.get("safetyRisks", []))
         for table in encounter_tables.values()
         for component in table.get("components", [])
         if int(component.get("maxLevel", 0)) >= 28
     )
     if not voltorb_selfdestruct:
-        errors.append("Wild-risk regression failed: Voltorb Selfdestruct is not marked at applicable levels.")
+        errors.append("Safety regression failed: Voltorb Selfdestruct is not marked at applicable levels.")
+
+    def has_risk(pid: int, name: str, *, non_safari: bool = True) -> bool:
+        return any(
+            int(component.get("pokemonId", -1)) == pid
+            and any(risk.get("name") == name for risk in component.get("safetyRisks", []))
+            for table in encounter_tables.values()
+            if not non_safari or not table.get("safari")
+            for component in table.get("components", [])
+        )
+
+    for pid, name, risk_name in (
+        (63, "Abra", "Teleport"),
+        (60, "Poliwag", "Belly Drum"),
+        (331, "Cacnea", "Sticky Barb"),
+        (235, "Smeargle", "Sketch"),
+        (132, "Ditto", "Transform"),
+    ):
+        if not has_risk(pid, risk_name):
+            errors.append(f"Safety regression failed: {name} lacks its expected {risk_name} warning.")
+
+    if not any(
+        risk.get("name") == "Rage Powder"
+        for table in encounter_tables.values() if not table.get("safari")
+        for component in table.get("components", [])
+        for risk in component.get("safetyRisks", [])
+    ):
+        errors.append("Safety regression failed: no context-aware Rage Powder warnings were generated.")
+    if not any(
+        risk.get("name") == "Follow Me"
+        for table in encounter_tables.values() if not table.get("safari")
+        for component in table.get("components", [])
+        for risk in component.get("safetyRisks", [])
+    ):
+        errors.append("Safety regression failed: no context-aware Follow Me warnings were generated.")
+    if not any(
+        risk.get("name") in {"Trick", "Switcheroo"}
+        for table in encounter_tables.values() if not table.get("safari")
+        for component in table.get("components", [])
+        for risk in component.get("safetyRisks", [])
+    ):
+        errors.append("Safety regression failed: no setup-dependent Trick/Switcheroo warnings were generated.")
 
     hunt_count = 0
     held_item_ids: set[int] = set()
@@ -352,7 +430,7 @@ def main() -> int:
                     )
                 if source_kinds - {"lure"}:
                     has_non_lure_source = True
-                for risk in component.get("selfHarmRisks", []):
+                for risk in component.get("safetyRisks", []):
                     expected_risks[(str(risk.get("kind")), str(risk.get("name")))] = risk
         listed_categories = p.get("dexCategories", [])
         compact_category_availability = p.get("categoryAvailability", {})
@@ -385,9 +463,9 @@ def main() -> int:
                     errors.append(f"Category availability for #{pid} {category} contains invalid {season!r}/{time!r}.")
             if actual_pairs != expected_categories.get(category, set()):
                 errors.append(f"Category availability for #{pid} {category} does not match detailed encounters.")
-        actual_risk_keys = {(str(risk.get("kind")), str(risk.get("name"))) for risk in p.get("wildSelfHarmRisks", [])}
+        actual_risk_keys = {(str(risk.get("kind")), str(risk.get("name"))) for risk in p.get("wildSafetyRisks", [])}
         if actual_risk_keys != set(expected_risks):
-            errors.append(f"Compact wild-risk summary for #{pid} does not match encounter components.")
+            errors.append(f"Compact safety-risk summary for #{pid} does not match encounter components.")
 
         for folder in ("normal", "shiny", "icons", "icons-shiny"):
             if not (ROOT / "sprites" / folder / f"{pid}.png").exists():
@@ -461,8 +539,10 @@ def main() -> int:
             errors.append(f"Route index row {n} incorrectly classifies Safari Zone Gate as Safari.")
         if not row.get("safari"):
             continue
-        if row.get("selfHarmWarningsApplicable") is not False:
-            errors.append(f"Safari route row {n} must suppress self-harm warnings.")
+        if row.get("safetyWarningsApplicable") is not False:
+            errors.append(f"Safari route row {n} must suppress safety warnings.")
+        if row.get("slowdownWarningsApplicable") is not False:
+            errors.append(f"Safari route row {n} must suppress start-delay warnings.")
         region = row.get("region")
         location_id = int(row.get("locationId", 0) or 0)
         if region == "Johto" and location_id in JOHTO_SAFARI_AREAS:
@@ -695,7 +775,7 @@ def main() -> int:
     print("- EV training contains only category-leading yields, including exact Attack/Speed and Sp. Attack/Speed 50/50 pools")
     print("- EXP rankings use a transparent base-EXP × average-level ÷ 7 estimate and preserve season/time availability")
     print("- Start-of-battle slowdown indicators and Safari catch estimates are present")
-    print("- Safari self-harm warnings are suppressed while global Pokédex warnings remain available")
+    print("- Safari safety warnings are suppressed while global Pokédex warnings remain available")
     print("- Johto Safari biome names, Hoenn area numbers and Safari walking labels are normalized to Grass")
     print("- Johto 90% and Sinnoh 80% static grass pools carry clear source-coverage metadata")
     print("- Safari Zone Gate is correctly classified as Headbutt, not Safari")

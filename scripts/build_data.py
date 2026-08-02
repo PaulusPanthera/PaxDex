@@ -159,39 +159,16 @@ EV_YIELD_FIELDS = {
     "Speed": "ev_speed",
 }
 
-# Moves are checked against the actual four level-up moves a wild Pokémon can
-# know at each generated encounter level. The warning is deliberately broader
-# than instant self-KO: recoil, crash damage and delayed self-KO are also useful
-# shiny-hunting hazards.
-SELF_HARM_MOVE_RULES = {
-    "Selfdestruct": ("self-ko", "The user faints immediately."),
-    "Explosion": ("self-ko", "The user faints immediately."),
-    "Memento": ("self-ko", "The user faints immediately."),
-    "Final Gambit": ("self-ko", "The user faints immediately."),
-    "Healing Wish": ("self-ko", "The user faints immediately."),
-    "Lunar Dance": ("self-ko", "The user faints immediately."),
-    "Perish Song": ("countdown", "The user can faint when the perish count reaches zero."),
-    "Take Down": ("recoil", "The user takes recoil damage."),
-    "Double-Edge": ("recoil", "The user takes recoil damage."),
-    "Submission": ("recoil", "The user takes recoil damage."),
-    "Brave Bird": ("recoil", "The user takes recoil damage."),
-    "Flare Blitz": ("recoil", "The user takes recoil damage."),
-    "Head Smash": ("recoil", "The user takes heavy recoil damage."),
-    "Volt Tackle": ("recoil", "The user takes recoil damage."),
-    "Wood Hammer": ("recoil", "The user takes recoil damage."),
-    "Wild Charge": ("recoil", "The user takes recoil damage."),
-    "Head Charge": ("recoil", "The user takes recoil damage."),
-    "Jump Kick": ("crash", "The user takes crash damage if the move misses or fails."),
-    "Hi Jump Kick": ("crash", "The user takes crash damage if the move misses or fails."),
-    "Curse": ("hp-loss", "Ghost-type users sacrifice half of their maximum HP."),
-    "Thrash": ("confusion", "The user becomes confused after the locked attack ends."),
-    "Outrage": ("confusion", "The user becomes confused after the locked attack ends."),
-    "Petal Dance": ("confusion", "The user becomes confused after the locked attack ends."),
-}
-SELF_HARM_ABILITY_RULES = {
-    "Dry Skin": ("weather", "The Pokémon loses HP each turn in harsh sunlight."),
-    "Solar Power": ("weather", "The Pokémon loses HP each turn in harsh sunlight."),
-}
+# Wild-safety rules are stored in shared/safety-rules.json so PaxDex and
+# WARtool can consume the same definitions instead of drifting apart.
+SAFETY_SEVERITY_ORDER = {"critical": 0, "warning": 1, "preparation": 2}
+
+
+def load_safety_rules(root: Path) -> dict[str, Any]:
+    path = root / "shared" / "safety-rules.json"
+    if not path.exists():
+        raise FileNotFoundError(f"Missing shared safety rules: {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def wild_moves_at_level(level_moves: list[dict[str, Any]], level: int) -> list[str]:
@@ -442,6 +419,18 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     safari_rates_path = data_dir / "safari-rates.json"
     safari_rates = json.loads(safari_rates_path.read_text(encoding="utf-8")) if safari_rates_path.exists() else {"johto": {}, "sinnoh": {}}
 
+    safety_config = load_safety_rules(root)
+    move_safety_rules: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    held_item_safety_rules: list[dict[str, Any]] = []
+    for rule in safety_config.get("rules", []):
+        trigger = rule.get("trigger", {})
+        if trigger.get("kind") == "move":
+            for move_name in trigger.get("names", []):
+                move_safety_rules[str(move_name)].append(rule)
+        elif trigger.get("kind") == "held-item":
+            held_item_safety_rules.append(rule)
+    compound_safety_rules = list(safety_config.get("compoundRules", []))
+
     with zipfile.ZipFile(dump_zip) as zf:
         monsters_raw = load_dump_json(zf, "info/monsters.json")
         monsters_all = {int(m["id"]): m for m in monsters_raw}
@@ -462,6 +451,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     wild_abilities_by_pid: dict[int, list[str]] = {}
     slow_abilities_by_pid: dict[int, list[str]] = {}
     level_moves_by_pid: dict[int, list[dict[str, Any]]] = {}
+    held_item_names_by_pid: dict[int, list[str]] = {}
     types_by_pid: dict[int, list[str]] = {}
     for pid, mon in monsters.items():
         types = []
@@ -519,6 +509,11 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             moves_by_type[entry["type"]].append(entry)
 
         level_moves_by_pid[pid] = level_moves
+        held_item_names_by_pid[pid] = [
+            clean_decorated_label(item.get("name"))
+            for item in mon.get("held_items", [])
+            if item.get("name")
+        ]
 
         detail = {
             "id": pid,
@@ -550,31 +545,135 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         }
         safe_json(data_dir / "pokemon" / f"{pid}.json", detail)
 
-    def self_harm_risks_for(pid: int, min_level: int, max_level: int) -> list[dict[str, Any]]:
-        risks: list[dict[str, Any]] = []
-        move_levels: dict[str, set[int]] = defaultdict(set)
+    def encounter_safety_context(
+        method: str,
+        encounter_type: str,
+        safari: bool,
+        sources: list[dict[str, Any]],
+    ) -> dict[str, bool]:
+        source_kinds = {str(source.get("kind", "")) for source in sources}
+        explicit_horde = method in {"5× Horde", "3× Horde"}
+        horde_source = explicit_horde or bool(source_kinds & {"horde", "sweet-scent"})
+        single_source = bool(source_kinds & {"single", "lure"})
+        lure_double = method == "Lure Singles" and not safari
+        dark_grass_double = encounter_type == "Dark Grass" and not safari
+        return {
+            "safari": safari,
+            "multipleOpponents": horde_source or lure_double or dark_grass_double,
+            "hordeOnly": explicit_horde or (horde_source and not single_source and not lure_double and not dark_grass_double),
+        }
+
+    def safety_risks_for(
+        pid: int,
+        min_level: int,
+        max_level: int,
+        *,
+        method: str,
+        encounter_type: str,
+        safari: bool,
+        sources: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        context = encounter_safety_context(method, encounter_type, safari, sources)
+        if context["safari"]:
+            return []
+
+        active_moves_by_level: dict[int, set[str]] = {}
         if min_level > 0 and max_level >= min_level:
             for level in range(min_level, max_level + 1):
-                for move_name in wild_moves_at_level(level_moves_by_pid.get(pid, []), level):
-                    if move_name not in SELF_HARM_MOVE_RULES:
+                active_moves_by_level[level] = set(wild_moves_at_level(level_moves_by_pid.get(pid, []), level))
+
+        risks: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        move_levels: dict[tuple[str, str], set[int]] = defaultdict(set)
+        move_rule_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+
+        for level, active_moves in active_moves_by_level.items():
+            for move_name in active_moves:
+                for rule in move_safety_rules.get(move_name, []):
+                    conditions = rule.get("conditions", {})
+                    contexts = rule.get("contexts", {})
+                    if conditions.get("requiresType") and conditions["requiresType"] not in types_by_pid.get(pid, []):
                         continue
-                    if move_name == "Curse" and "Ghost" not in types_by_pid.get(pid, []):
+                    if contexts.get("requiresMultipleOpponents") and not context["multipleOpponents"]:
                         continue
-                    move_levels[move_name].add(level)
-        for move_name, levels in sorted(move_levels.items(), key=lambda row: (min(row[1]), row[0])):
-            risk_type, description = SELF_HARM_MOVE_RULES[move_name]
-            risks.append({
-                "kind": "move", "name": move_name, "riskType": risk_type,
-                "description": description, "levels": compact_level_ranges(levels),
-            })
-        for ability_name in wild_abilities_by_pid.get(pid, []):
-            if ability_name not in SELF_HARM_ABILITY_RULES:
+                    if contexts.get("excludeHordeOnly") and context["hordeOnly"]:
+                        continue
+                    key = (str(rule.get("id", move_name)), move_name)
+                    move_levels[key].add(level)
+                    move_rule_by_key[key] = rule
+
+        for key, levels in sorted(move_levels.items(), key=lambda row: (min(row[1]), row[0][1])):
+            rule_id, move_name = key
+            rule = move_rule_by_key[key]
+            risk = {
+                "id": rule_id,
+                "kind": "move",
+                "name": move_name,
+                "category": rule.get("category", "wild danger"),
+                "severity": rule.get("severity", "warning"),
+                "description": rule.get("effect", "This move can endanger a shiny encounter."),
+                "preparation": rule.get("preparation", "Prepare an appropriate counter before hunting."),
+                "verification": rule.get("verification", "confirmed"),
+                "levels": compact_level_ranges(levels),
+            }
+            risks.append(risk)
+            seen.add((risk["kind"], risk["name"]))
+
+        for rule in held_item_safety_rules:
+            prefix = str(rule.get("trigger", {}).get("namePrefix", ""))
+            matching_item = next((name for name in held_item_names_by_pid.get(pid, []) if prefix and name.startswith(prefix)), None)
+            if not matching_item:
                 continue
-            risk_type, description = SELF_HARM_ABILITY_RULES[ability_name]
+            name = prefix or matching_item
+            key = ("held-item", name)
+            if key in seen:
+                continue
             risks.append({
-                "kind": "ability", "name": ability_name, "riskType": risk_type,
-                "description": description, "levels": "",
+                "id": rule.get("id", "held-item-risk"),
+                "kind": "held-item",
+                "name": name,
+                "category": rule.get("category", "held item"),
+                "severity": rule.get("severity", "warning"),
+                "description": rule.get("effect", "A held item can endanger a shiny encounter."),
+                "preparation": rule.get("preparation", "Prepare for the held item before hunting."),
+                "verification": rule.get("verification", "confirmed"),
+                "levels": "",
             })
+            seen.add(key)
+
+        for rule in compound_safety_rules:
+            if pid not in {int(value) for value in rule.get("speciesIds", [])}:
+                continue
+            required_move = str(rule.get("requiresMove", ""))
+            companion_moves = {str(value) for value in rule.get("withAnyMove", [])}
+            levels = {
+                level for level, active_moves in active_moves_by_level.items()
+                if required_move in active_moves and active_moves.intersection(companion_moves)
+            }
+            if not levels or not context["multipleOpponents"]:
+                continue
+            name = str(rule.get("name") or "Compound moveset risk")
+            key = ("compound", name)
+            if key in seen:
+                continue
+            risks.append({
+                "id": rule.get("id", "compound-risk"),
+                "kind": "compound",
+                "name": name,
+                "category": rule.get("category", "compound"),
+                "severity": rule.get("severity", "warning"),
+                "description": rule.get("effect", "Several moves combine into a higher-risk encounter."),
+                "preparation": rule.get("preparation", "Use a combined control plan."),
+                "verification": rule.get("verification", "confirmed"),
+                "levels": compact_level_ranges(levels),
+            })
+            seen.add(key)
+
+        risks.sort(key=lambda risk: (
+            SAFETY_SEVERITY_ORDER.get(str(risk.get("severity")), 99),
+            str(risk.get("category", "")),
+            str(risk.get("name", "")),
+        ))
         return risks
 
     # Hunt methods and user-facing encounter categories are appended to the compact
@@ -694,7 +793,13 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "maxLevel": row["maxLevel"],
                 "abilities": abilities_by_pid.get(pid, []),
                 "slowAbilities": slow_abilities_by_pid.get(pid, []),
-                "selfHarmRisks": self_harm_risks_for(pid, row["minLevel"], row["maxLevel"]),
+                "safetyRisks": safety_risks_for(
+                    pid, row["minLevel"], row["maxLevel"],
+                    method=method,
+                    encounter_type=sample["encounterType"],
+                    safari=bool(sample["safari"]),
+                    sources=row.get("sources", []),
+                ),
                 "safariCapture": capture,
                 "sources": row.get("sources", []),
             })
@@ -711,7 +816,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         }
         if safari_pool is not None:
             signature_data["safariPool"] = safari_pool
-            signature_data["selfHarmWarningsApplicable"] = False
+            signature_data["safetyWarningsApplicable"] = False
+            signature_data["slowdownWarningsApplicable"] = False
         signature = json.dumps(signature_data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         table_id = table_ids_by_signature.get(signature)
         if table_id is None:
@@ -757,7 +863,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "safariCapture": capture_by_pid.get(pid),
                 **({
                     "safariPool": encounter_tables[table_id].get("safariPool"),
-                    "selfHarmWarningsApplicable": False,
+                    "safetyWarningsApplicable": False,
+                    "slowdownWarningsApplicable": False,
                 } if row["safari"] else {}),
             })
 
@@ -962,7 +1069,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
     availability_by_pid: dict[int, dict[str, set[tuple[str, str]]]] = defaultdict(lambda: defaultdict(set))
     dex_categories_by_pid: dict[int, set[str]] = defaultdict(set)
     category_availability_by_pid: dict[int, dict[str, set[tuple[str, str]]]] = defaultdict(lambda: defaultdict(set))
-    self_harm_summary_by_pid: dict[int, dict[tuple[str, str], dict[str, Any]]] = defaultdict(dict)
+    safety_summary_by_pid: dict[int, dict[tuple[str, str], dict[str, Any]]] = defaultdict(dict)
     route_index_by_table: dict[str, dict[str, Any]] = {}
     for pid in monsters:
         grouped: dict[tuple, dict[str, Any]] = {}
@@ -1010,11 +1117,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             if source_kinds - {"lure"}:
                 has_non_lure_source = True
             if table_component:
-                for risk in table_component.get("selfHarmRisks", []):
+                for risk in table_component.get("safetyRisks", []):
                     risk_key = (str(risk.get("kind", "")), str(risk.get("name", "")))
-                    self_harm_summary_by_pid[pid][risk_key] = {
-                        "kind": risk.get("kind"), "name": risk.get("name"),
-                        "riskType": risk.get("riskType"), "description": risk.get("description"),
+                    safety_summary_by_pid[pid][risk_key] = {
+                        key: value for key, value in risk.items() if key != "levels"
                     }
             for availability in opt["availability"]:
                 pair = (availability["season"], availability["time"])
@@ -1029,7 +1135,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "note": opt["note"], "shownTableTotal": opt.get("shownTableTotal"), "containsRandomHordes": opt.get("containsRandomHordes", False),
                 **({
                     "safariPool": opt.get("safariPool"),
-                    "selfHarmWarningsApplicable": False,
+                    "safetyWarningsApplicable": False,
+                    "slowdownWarningsApplicable": False,
                 } if opt["safari"] else {}),
                 "availability": [],
             })
@@ -1092,9 +1199,13 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 key=lambda row: (DEX_CATEGORY_ORDER.get(row[0], 999), row[0]),
             )
         }
-        entry["wildSelfHarmRisks"] = sorted(
-            self_harm_summary_by_pid.get(pid, {}).values(),
-            key=lambda risk: (risk.get("kind") != "move", risk.get("name", "")),
+        entry["wildSafetyRisks"] = sorted(
+            safety_summary_by_pid.get(pid, {}).values(),
+            key=lambda risk: (
+                SAFETY_SEVERITY_ORDER.get(str(risk.get("severity")), 99),
+                str(risk.get("category", "")),
+                str(risk.get("name", "")),
+            ),
         )
     safe_json(data_dir / "index.json", index)
     route_index = list(route_index_by_table.values())
@@ -1258,6 +1369,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "hordes": training_hordes,
     })
 
+    safe_json(data_dir / "safety-rules.json", safety_config)
     safe_json(data_dir / "encounter-tables.json", encounter_tables)
     safe_json(data_dir / "phase-previews.json", {
         str(table_id): [
@@ -1265,7 +1377,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "pokemonId": int(component["pokemonId"]),
                 "name": component["name"],
                 "share": round(float(component["share"]), 7),
-                "selfHarmRisks": component.get("selfHarmRisks", []),
+                "safetyRisks": component.get("safetyRisks", []),
             }
             for component in table.get("components", [])
         ]
@@ -1295,7 +1407,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.23",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.24",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

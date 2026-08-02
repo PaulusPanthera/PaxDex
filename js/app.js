@@ -179,18 +179,37 @@ function typeBadges(types = []) {
   return [...new Set(types.filter(Boolean))].map(typeBadge).join("");
 }
 
-function selfHarmRiskText(risks = []) {
+const SAFETY_SEVERITY_ORDER = { critical: 0, warning: 1, preparation: 2 };
+function safetyRiskText(risks = []) {
   if (!risks.length) return "";
   return risks.map(risk => {
     const levelText = risk.levels ? ` · Lv. ${risk.levels}` : "";
-    return `${risk.name}${levelText}: ${risk.description || "Can reduce its own HP."}`;
+    const categoryText = risk.category ? ` · ${risk.category}` : "";
+    const preparation = risk.preparation ? ` Preparation: ${risk.preparation}` : "";
+    return `${risk.name}${levelText}${categoryText}: ${risk.description || "Can endanger a shiny encounter."}${preparation}`;
   }).join(" | ");
 }
-function selfHarmWarning(risks = [], { compact = false } = {}) {
-  if (!risks.length) return "";
-  const title = `Wild encounter danger · ${selfHarmRiskText(risks)}`;
-  return `<span class="wild-risk-marker ${compact ? "compact" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><span aria-hidden="true">⚠</span>${compact ? "" : "<b>Wild risk</b>"}</span>`;
+function safetySeverity(risks = []) {
+  return [...risks].sort((a, b) => (SAFETY_SEVERITY_ORDER[a.severity] ?? 99) - (SAFETY_SEVERITY_ORDER[b.severity] ?? 99))[0]?.severity || "warning";
 }
+function safetyWarning(risks = [], { compact = false } = {}) {
+  if (!risks.length) return "";
+  const severity = safetySeverity(risks);
+  const title = `Wild encounter safety · ${safetyRiskText(risks)}`;
+  const icon = severity === "critical" ? "!" : severity === "preparation" ? "i" : "⚠";
+  return `<span class="wild-risk-marker severity-${severity} ${compact ? "compact" : ""}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><span aria-hidden="true">${icon}</span>${compact ? "" : "<b>Safety</b>"}</span>`;
+}
+function safetyWarningsEnabled(value = {}) {
+  return value.safetyWarningsApplicable !== false && value.selfHarmWarningsApplicable !== false;
+}
+function safetyRiskRows(risks = []) {
+  if (!risks.length) return "";
+  return `<div class="split-safety-list">${risks.map(risk => {
+    const levelText = risk.levels ? ` · Lv. ${risk.levels}` : "";
+    return `<div class="split-safety-row severity-${escapeHtml(risk.severity || "warning")}"><strong>${escapeHtml(risk.name)}${escapeHtml(levelText)}</strong><span>${escapeHtml(risk.category || "Encounter safety")}</span><p>${escapeHtml(risk.description || "This can endanger the encounter.")}</p>${risk.preparation ? `<small><b>Prepare:</b> ${escapeHtml(risk.preparation)}</small>` : ""}</div>`;
+  }).join("")}</div>`;
+}
+
 function generationFor(id) {
   if (id <= 151) return 1;
   if (id <= 251) return 2;
@@ -568,10 +587,10 @@ function pokemonCard(p, { shiny = settings().shinySprites, target = "pokemon" } 
   const allCategories = p.dexCategories || [];
   const categories = allCategories.slice(0, 2);
   const extraCategories = Math.max(0, allCategories.length - categories.length);
-  const risks = p.wildSelfHarmRisks || [];
+  const risks = p.wildSafetyRisks || [];
   return `<article class="pokemon-card ${typeThemeClass(p.types)}" data-pokemon-id="${p.id}">
     <a class="pokemon-card-link" href="#${target}/${p.id}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
-    <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span>${selfHarmWarning(risks,{compact:true})}</div>
+    <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span>${safetyWarning(risks,{compact:true})}</div>
     <button class="favorite-star ${fav ? "on" : ""}" type="button" data-favorite="${p.id}" aria-label="${fav ? "Remove" : "Add"} ${escapeHtml(p.name)} ${fav ? "from" : "to"} favorites">★</button>
     <div class="sprite-box">${imageTag(p.id, p.name, { shiny, icon: true })}</div>
     <div class="pokemon-card-copy"><h3>${escapeHtml(p.name)}</h3><div class="type-row">${typeBadges(p.types)}</div></div>
@@ -745,7 +764,7 @@ async function renderPokemon(id) {
           <div><span>Wild encounter methods</span><small>${orderedMethods(p.methods || []).length ? "Available methods in the current Pokédex dump." : "No wild encounter method is listed."}</small></div>
           <div class="method-chip-list">${orderedMethods(p.methods || []).length ? orderedMethods(p.methods || []).map(method => `<span class="method-chip">${escapeHtml(method)}</span>`).join("") : '<span class="method-chip muted">Not obtainable in the wild</span>'}</div>
         </div>
-        ${(p.wildSelfHarmRisks || []).length ? `<div class="detail-risk-summary">${selfHarmWarning(p.wildSelfHarmRisks)}<div><strong>Potential wild self-KO or HP-loss risk</strong><small>${escapeHtml(selfHarmRiskText(p.wildSelfHarmRisks))} Exact moves depend on the encounter level.</small></div></div>` : ""}
+        ${(p.wildSafetyRisks || []).length ? `<div class="detail-risk-summary">${safetyWarning(p.wildSafetyRisks)}<div><strong>Wild encounter safety warnings</strong><small>${escapeHtml(safetyRiskText(p.wildSafetyRisks))} Warnings are based on the four level-up moves available at the encounter level and known held-item risks.</small></div></div>` : ""}
       </div>
     </div>
     <div class="detail-layout">
@@ -845,10 +864,10 @@ function huntPhasePreview(hunt, targetIds = [], { prominent = false } = {}) {
   const phaseLink = component => {
     const isTarget = targets.has(Number(component.pokemonId));
     const title = `${component.name}${isTarget ? " · target" : ""} · ${formatPercent(component.share)} of Pokémon shown`;
-    const risks = hunt.selfHarmWarningsApplicable === false ? [] : (component.selfHarmRisks || []);
-    const riskText = risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : "";
+    const risks = safetyWarningsEnabled(hunt) ? (component.safetyRisks || []) : [];
+    const riskText = risks.length ? ` · safety: ${safetyRiskText(risks)}` : "";
     const fullTitle = title + riskText;
-    return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
+    return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? safetyWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
   };
   if (allTargets) {
     return `<div class="hunt-phase-preview pure-target ${prominent ? "prominent" : ""}">
@@ -909,10 +928,11 @@ async function openEncounterSplit(h, targetIds = []) {
   const rows = table.components.map(component => {
     const isTarget = targetIdSet.has(Number(component.pokemonId));
     const speciesEph = speed * Number(component.share || 0);
-    const slow = component.slowAbilities || [];
-    const risks = table.selfHarmWarningsApplicable === false ? [] : (component.selfHarmRisks || []);
+    const slow = table.slowdownWarningsApplicable === false ? [] : (component.slowAbilities || []);
+    const risks = safetyWarningsEnabled(table) ? (component.safetyRisks || []) : [];
     const slowMarker = slow.length ? `<span class="slowdown-marker" title="May add a start-of-battle ability animation/message: ${escapeHtml(slow.join(", "))}"><img src="assets/icons/encounter-slowdown.png" alt="Start-of-battle slowdown warning"><span>${escapeHtml(slow.join(" / "))}</span></span>` : "";
-    const riskMarker = risks.length ? selfHarmWarning(risks,{compact:true}) : "";
+    const riskMarker = risks.length ? safetyWarning(risks,{compact:true}) : "";
+    const safetyRows = safetyRiskRows(risks);
     const safari = component.safariCapture;
     const safariHtml = safari ? `<div class="split-safari"><strong>${formatPercent(safari.ballsOnlySuccess)}</strong> balls-only catch estimate<br><small>${formatPercent(safari.fleePerTurn)} flee chance after a failed ball · ${escapeHtml(safari.scope)}</small></div>` : table.safari ? `<div class="split-safari unknown"><strong>Unknown catch estimate</strong><br><small>No matched community flee-rate entry for this region.</small></div>` : "";
     const sources = component.sources || [];
@@ -939,15 +959,15 @@ async function openEncounterSplit(h, targetIds = []) {
           <span><strong>${formatPercent(component.share, 1)}</strong> of all Pokémon shown</span>
           <span><strong>${formatRate(speciesEph)}/hr</strong> at the current method speed</span>
           <span>Lv. ${component.minLevel || "?"}–${component.maxLevel || "?"}</span>
-        </div>${sourceHtml}${safariHtml}</div>
+        </div>${sourceHtml}${safetyRows}${safariHtml}</div>
     </article>`;
   }).join("");
   const safariNote = table.safari ? `<div class="split-source"><strong>Safari estimates:</strong> Balls-only calculations are applied to matched Johto Safari and Sinnoh Great Marsh species. Kanto and Hoenn remain encounter-share estimates without catch-rate adjustment.</div>` : "";
   const safariCoverageNote = table.safariPool?.note ? `<p><strong>Safari source coverage:</strong> ${escapeHtml(table.safariPool.note)}${table.safariPool.lureModel ? " The Lure model is applied only to the documented base pool." : ""}</p>` : "";
-  const affectedSlowdowns = table.components.filter(component => (component.slowAbilities || []).length);
+  const affectedSlowdowns = table.slowdownWarningsApplicable === false ? [] : table.components.filter(component => (component.slowAbilities || []).length);
   const slowdownLegend = affectedSlowdowns.length ? `<div class="slowdown-legend"><img src="assets/icons/encounter-slowdown.png" alt=""><span><strong>${affectedSlowdowns.length} ${affectedSlowdowns.length === 1 ? "species has" : "species have"} a possible start-of-battle delay.</strong> The red arrow is shown only on affected Pokémon; hover it to see the relevant ${affectedSlowdowns.length === 1 ? "ability" : "abilities"}.</span></div>` : "";
-  const affectedRisks = table.selfHarmWarningsApplicable === false ? [] : table.components.filter(component => (component.selfHarmRisks || []).length);
-  const riskLegend = affectedRisks.length ? `<div class="wild-risk-legend"><span aria-hidden="true">⚠</span><span><strong>${affectedRisks.length} ${affectedRisks.length === 1 ? "species has" : "species have"} a potential self-KO or HP-loss risk at these levels.</strong> Hover the warning icon for the exact move or ability.</span></div>` : "";
+  const affectedRisks = safetyWarningsEnabled(table) ? table.components.filter(component => (component.safetyRisks || []).length) : [];
+  const riskLegend = affectedRisks.length ? `<div class="wild-risk-legend"><span aria-hidden="true">⚠</span><span><strong>${affectedRisks.length} ${affectedRisks.length === 1 ? "species has" : "species have"} an encounter safety warning at these levels.</strong> Detailed risks and recommended preparation are shown on each affected species below.</span></div>` : "";
   const isSweetScent = table.method.includes("Horde");
   const rawLabel = isSweetScent ? "Raw Dex horde block" : "Encounter outcome table";
   const shownSummary = table.containsRandomHordes ? `<span>Avg. ${formatNumber(Number(table.shownTableTotal || 1), 2)} Pokémon shown / encounter roll</span>` : "";
@@ -1158,8 +1178,8 @@ function routeOption(row) {
 function routeSpeciesPreview(table) {
   if (!table?.components?.length) return "";
   const components = table.components.slice(0, 4);
-  const risksApplicable = table.selfHarmWarningsApplicable !== false;
-  return `<div class="route-species-preview">${components.map(component => { const risks=risksApplicable ? (component.selfHarmRisks||[]) : []; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · danger: ${selfHarmRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? selfHarmWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
+  const risksApplicable = safetyWarningsEnabled(table);
+  return `<div class="route-species-preview">${components.map(component => { const risks=risksApplicable ? (component.safetyRisks||[]) : []; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · safety: ${safetyRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? safetyWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
 }
 
 async function renderRouteSearcher() {

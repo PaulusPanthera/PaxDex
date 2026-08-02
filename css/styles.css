@@ -1690,3 +1690,113 @@ html[data-theme="dark"] .training-card-meta .training-purity { background:var(--
 .training-load-more { display:flex; justify-content:center; margin:20px 0 4px; }
 .training-load-more .pixel-btn { min-width:230px; display:flex; flex-wrap:wrap; }
 .training-load-more small { font-weight:700; opacity:.75; }
+
+/* v0.24 context-aware shiny-safety severity markers */
+.wild-risk-marker.severity-warning {
+  color:#654600;
+  background:#fff0b8;
+  border-color:#b97a00;
+}
+.wild-risk-marker.severity-warning > span { color:#9b6500; }
+.wild-risk-marker.severity-preparation {
+  color:#183f5d;
+  background:#dcefff;
+  border-color:#3979a7;
+}
+.wild-risk-marker.severity-preparation > span {
+  display:grid;
+  place-items:center;
+  width:14px;
+  height:14px;
+  color:#fff;
+  background:#3979a7;
+  border-radius:50%;
+  font-family:Arial, sans-serif;
+  font-size:.68rem;
+}
+html[data-theme="dark"] .wild-risk-marker.severity-warning {
+  color:#fff0bd;
+  background:#524016;
+  border-color:#e4b64d;
+}
+html[data-theme="dark"] .wild-risk-marker.severity-warning > span { color:#ffd66c; }
+html[data-theme="dark"] .wild-risk-marker.severity-preparation {
+  color:#dcefff;
+  background:#203d52;
+  border-color:#70afe0;
+}
+html[data-theme="dark"] .wild-risk-marker.severity-preparation > span {
+  color:#102535;
+  background:#9bd2fb;
+}
+
+.split-safety-list {
+  display:grid;
+  gap:6px;
+  margin-top:9px;
+}
+.split-safety-row {
+  display:grid;
+  grid-template-columns:max-content 1fr;
+  gap:3px 8px;
+  padding:8px 9px;
+  color:#6f160f;
+  background:#fff0e8;
+  border-left:4px solid #c3402f;
+  font-size:.69rem;
+  line-height:1.4;
+}
+.split-safety-row > span {
+  align-self:center;
+  color:#8b3b31;
+  font-size:.62rem;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.split-safety-row p,
+.split-safety-row small {
+  grid-column:1 / -1;
+  margin:0;
+}
+.split-safety-row small { color:#783b32; }
+.split-safety-row.severity-warning {
+  color:#604500;
+  background:#fff5ca;
+  border-left-color:#b97a00;
+}
+.split-safety-row.severity-warning > span,
+.split-safety-row.severity-warning small { color:#755700; }
+.split-safety-row.severity-preparation {
+  color:#183f5d;
+  background:#e6f4ff;
+  border-left-color:#3979a7;
+}
+.split-safety-row.severity-preparation > span,
+.split-safety-row.severity-preparation small { color:#315f80; }
+html[data-theme="dark"] .split-safety-row {
+  color:#ffe5dd;
+  background:#47241f;
+  border-left-color:#ed7967;
+}
+html[data-theme="dark"] .split-safety-row > span,
+html[data-theme="dark"] .split-safety-row small { color:#f2c5bc; }
+html[data-theme="dark"] .split-safety-row.severity-warning {
+  color:#fff0bd;
+  background:#453713;
+  border-left-color:#e4b64d;
+}
+html[data-theme="dark"] .split-safety-row.severity-warning > span,
+html[data-theme="dark"] .split-safety-row.severity-warning small { color:#ffe19a; }
+html[data-theme="dark"] .split-safety-row.severity-preparation {
+  color:#dcefff;
+  background:#203d52;
+  border-left-color:#70afe0;
+}
+html[data-theme="dark"] .split-safety-row.severity-preparation > span,
+html[data-theme="dark"] .split-safety-row.severity-preparation small { color:#b9ddf8; }
+@media (max-width:620px) {
+  .split-safety-row { grid-template-columns:1fr; }
+  .split-safety-row p,
+  .split-safety-row small { grid-column:auto; }
+}

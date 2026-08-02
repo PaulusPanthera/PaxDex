@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "title": "PaxDex / WARtool wild encounter safety rules",
+  "notes": [
+    "Rules are evaluated against the four level-up moves available at each encounter level.",
+    "Safari contexts suppress battle-move, ability and held-item warnings.",
+    "Weather-dependent Dry Skin and Solar Power warnings are intentionally disabled until encounter weather is available.",
+    "Healing Wish, Lunar Dance, forced-switch moves and Drifblim compound interactions remain excluded pending in-game verification."
+  ],
+  "rules": [
+    {
+      "id": "selfdestruct",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Selfdestruct",
+          "Explosion"
+        ]
+      },
+      "category": "self-KO",
+      "severity": "critical",
+      "effect": "The wild Pokémon faints immediately after using this move.",
+      "preparation": "Bring a Pokémon with Damp and avoid removing or suppressing Damp before capture.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "memento",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Memento"
+        ]
+      },
+      "category": "self-KO",
+      "severity": "critical",
+      "effect": "The wild Pokémon faints immediately after using Memento.",
+      "preparation": "Use Taunt, Imprison + Memento or another real move-denial method; trapping alone does not stop it.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "final-gambit",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Final Gambit"
+        ]
+      },
+      "category": "self-KO",
+      "severity": "critical",
+      "effect": "The wild Pokémon faints after using Final Gambit.",
+      "preparation": "A Ghost-type target is immune; otherwise deny the move or capture quickly.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "perish-song",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Perish Song"
+        ]
+      },
+      "category": "countdown",
+      "severity": "critical",
+      "contexts": {
+        "excludeHordeOnly": true
+      },
+      "effect": "In a non-horde encounter, the wild Pokémon can faint when the perish count reaches zero.",
+      "preparation": "Use Soundproof, Imprison + Perish Song or finish the capture before the countdown ends.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "teleport",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Teleport"
+        ]
+      },
+      "category": "escape",
+      "severity": "critical",
+      "effect": "The wild Pokémon can end the battle by using Teleport.",
+      "preparation": "Use Arena Trap, Imprison + Teleport or apply a trapping move immediately.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "recoil",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Take Down",
+          "Double-Edge",
+          "Submission",
+          "Brave Bird",
+          "Flare Blitz",
+          "Volt Tackle",
+          "Wood Hammer",
+          "Wild Charge",
+          "Head Charge"
+        ]
+      },
+      "category": "self-damage",
+      "severity": "critical",
+      "effect": "The wild Pokémon takes recoil damage after the attack connects.",
+      "preparation": "Avoid leaving it at 1 HP unless the recoil move is disabled or cannot damage your catcher.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "head-smash",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Head Smash"
+        ]
+      },
+      "category": "self-damage",
+      "severity": "critical",
+      "effect": "The wild Pokémon takes very heavy recoil after Head Smash connects.",
+      "preparation": "Use a Rock-resistant, physically defensive target and deny the move or capture quickly; Ghost typing does not grant immunity.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "crash-damage",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Jump Kick",
+          "Hi Jump Kick"
+        ]
+      },
+      "category": "self-damage",
+      "severity": "critical",
+      "effect": "The wild Pokémon takes crash damage if the move misses or fails.",
+      "preparation": "Do not use a Ghost-type or Protect-style failure setup while the wild Pokémon is at low HP unless the move is disabled.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "ghost-curse",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Curse"
+        ]
+      },
+      "conditions": {
+        "requiresType": "Ghost"
+      },
+      "category": "self-damage",
+      "severity": "critical",
+      "effect": "A Ghost-type user sacrifices half of its maximum HP.",
+      "preparation": "Deny Curse or avoid reducing the wild Pokémon to a range where half-HP loss can faint it.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "belly-drum",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Belly Drum"
+        ]
+      },
+      "category": "self-damage",
+      "severity": "warning",
+      "effect": "Belly Drum removes half of the user's current HP.",
+      "preparation": "Avoid False Swipe to 1 HP until Belly Drum is disabled, sealed or no longer usable.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "confusion-lock",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Thrash",
+          "Outrage",
+          "Petal Dance"
+        ]
+      },
+      "category": "self-damage",
+      "severity": "warning",
+      "effect": "The wild Pokémon becomes confused after its locked attack ends and may hurt itself.",
+      "preparation": "Use Own Tempo, Safeguard, move denial or capture before confusion becomes dangerous.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "rage-powder",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Rage Powder"
+        ]
+      },
+      "contexts": {
+        "requiresMultipleOpponents": true
+      },
+      "category": "redirection",
+      "severity": "warning",
+      "effect": "Rage Powder can redirect your move away from the intended horde or double-battle target.",
+      "preparation": "Use faster Extreme Speed or Feint, Taunt or Imprison. Grass types and Overcoat ignore Rage Powder, but Worry Seed can remove Overcoat.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "follow-me",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Follow Me"
+        ]
+      },
+      "contexts": {
+        "requiresMultipleOpponents": true
+      },
+      "category": "redirection",
+      "severity": "warning",
+      "effect": "Follow Me can redirect your move away from the intended horde or double-battle target.",
+      "preparation": "Use faster Extreme Speed or Feint, Taunt or Imprison. Grass typing and Overcoat do not ignore Follow Me.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "sticky-barb",
+      "trigger": {
+        "kind": "held-item",
+        "namePrefix": "Sticky Barb"
+      },
+      "category": "held-item damage",
+      "severity": "critical",
+      "effect": "The wild Pokémon may hold a Sticky Barb and lose HP at the end of each turn.",
+      "preparation": "Do not leave it at 1 HP. Remove or neutralize the item safely, use Heal Pulse, or capture quickly.",
+      "verification": "confirmed"
+    },
+    {
+      "id": "sketch-struggle",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Sketch"
+        ]
+      },
+      "category": "PP / Struggle",
+      "severity": "preparation",
+      "effect": "If Sketch fails, wild Smeargle can run out of usable PP and reach Struggle very quickly.",
+      "preparation": "Give it a safe move to copy immediately or use a capture plan that does not let Sketch repeatedly fail.",
+      "verification": "community-documented"
+    },
+    {
+      "id": "transform-struggle",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Transform"
+        ]
+      },
+      "category": "PP / Struggle",
+      "severity": "preparation",
+      "effect": "After Transform, copied moves have limited PP and can create an eventual Struggle risk.",
+      "preparation": "Lead with a safe, high-PP moveset that cannot self-KO, escape or make capture unnecessarily difficult.",
+      "verification": "community-documented"
+    },
+    {
+      "id": "held-item-swap",
+      "trigger": {
+        "kind": "move",
+        "names": [
+          "Trick",
+          "Switcheroo"
+        ]
+      },
+      "category": "setup interaction",
+      "severity": "preparation",
+      "effect": "The wild Pokémon can exchange held items with your active Pokémon.",
+      "preparation": "Do not bring a damaging item such as Toxic Orb on the active catcher unless Trick or Switcheroo is denied.",
+      "verification": "community-documented"
+    }
+  ],
+  "compoundRules": [
+    {
+      "id": "hoppip-skiploom-redirection",
+      "speciesIds": [
+        187,
+        188
+      ],
+      "requiresMove": "Rage Powder",
+      "withAnyMove": [
+        "Memento",
+        "Bounce",
+        "Worry Seed"
+      ],
+      "category": "compound",
+      "severity": "critical",
+      "effect": "This moveset can combine redirection with self-KO pressure, delayed turns or removal of Overcoat.",
+      "preparation": "Do not rely on Overcoat alone. Plan priority control or Imprison/Taunt and remove non-targets without allowing redirection to protect them.",
+      "verification": "confirmed",
+      "name": "Rage Powder compound risk"
+    }
+  ]
+}

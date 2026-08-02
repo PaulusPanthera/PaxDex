@@ -1,39 +1,44 @@
-# PaxDex v0.23 Audit Report
+# PaxDex v0.24 Audit Report
 
-## Changes checked
+## Result
 
-- A new Training route and navigation tab render independently from the Pokédex, Shiny Hunter and Route Searcher.
-- Training data is restricted to 5× hordes.
-- EV Training exposes only the maximum expected EV yield found for each pure stat.
-- HP variable-yield results show both their average and possible range.
-- Attack / Speed and Sp. Attack / Speed categories require an exact 50/50 encounter split.
-- The two mixed categories include only their maximum-yield 10-EV pools and clearly explain that each individual horde awards one stat or the other.
-- EXP rankings use weighted base EXP yield and average encounter level.
-- EXP estimates are explicitly labelled as pre-modifier comparisons rather than exact final payouts.
-- Region, season and time filters combine correctly in both training modes.
-- Result pagination limits the initial render and expands without changing the selected filters.
-- Desktop and 390 px mobile layouts avoid horizontal page overflow.
-- Existing Safari naming, Lure corrections, encounter categories and danger-warning behaviour remain intact.
+The context-aware shiny-safety rebuild passes JavaScript syntax, Python compilation and the complete generated-data validator.
+
+## Safety corrections
+
+- Safari encounter tables contain no active safety warnings and suppress start-delay markers.
+- Perish Song is suppressed in horde-only contexts.
+- Rage Powder and Follow Me appear only where multiple opposing Pokémon may be present.
+- Curse remains restricted to Ghost-type users.
+- Weather-dependent Dry Skin/Solar Power warnings are excluded because the static dump does not expose active encounter weather.
+- Healing Wish, Lunar Dance, forced-switch moves and unverified Drifblim compound behavior remain excluded pending in-game verification.
+
+## Added coverage
+
+- Rage Powder: 88 tables
+- Follow Me: 24 tables / 28 affected component rows
+- Belly Drum: 66 tables
+- Teleport: 358 tables
+- Sticky Barb: 105 tables
+- Smeargle / Sketch: 20 tables
+- Ditto / Transform: 251 tables
+- Trick or Switcheroo: 127 tables
+
+## Generated-data totals
+
+- 649 Pokémon
+- 58,375 hunt options
+- 12,400 encounter tables
+- 12,400 Route Searcher rows
+- 2,145 5× training rows
+- 395 maximum-yield EV rows
+- 124 held-item icons
 
 ## Automated checks
 
-- Python builder and validator compile successfully.
-- JavaScript syntax passes `node --check`.
-- 649 Pokémon entries and 58,375 hunt options validate.
-- 12,400 full encounter tables and Route Searcher rows validate.
-- 2,145 unique 5× training rows validate.
-- 395 curated maximum-yield EV rows validate across all eight requested categories.
-- No duplicate training rows are generated.
-- Every curated EV row equals the highest yield generated for its category.
-- Both requested mixed categories validate as exact 50/50 pools.
-- Mt. Silver and Cerulean Cave EXP-ranking reference cases pass.
-- Existing Lure, Horde, Fossil, Special, Safari-area, catch-estimate, slowdown and wild-danger regressions pass.
-
-## Browser smoke test
-
-- Pure HP, Attack / Speed, Sp. Attack / Speed and EXP modes were exercised with generated data in headless Chromium.
-- The default HP result shows Route 123 at 12.5 average HP EV with a 10–15 range.
-- Mixed cards show 10 EV per horde and a visible 50% / 50% species split.
-- The EXP list begins with an approximately 8,000 base-EXP Mt. Silver horde.
-- The 390 px mobile layout has no horizontal page overflow.
-- Assets and JSON were supplied through the browser test harness because direct local-page navigation is blocked in the test environment; no page or JavaScript errors were reported.
+- `node --check js/app.js`: passed
+- `python -m py_compile scripts/build_data.py scripts/validate_data.py`: passed
+- `python scripts/validate_data.py`: passed
+- Shared and generated safety-rule files match exactly
+- Phase previews match full encounter-table safety data
+- Browser automation was unavailable in the container; DOM wiring, CSS parsing, syntax and generated data were checked independently.

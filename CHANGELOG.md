@@ -1,3 +1,24 @@
+# PaxDex v0.24
+
+## Context-aware shiny safety
+
+- Rebuilt the wild warning system around a shared, context-aware safety rules file.
+- Added Rage Powder and Follow Me warnings only where multiple wild opponents can appear: hordes, natural hordes, Dark Grass doubles and non-Safari Lure doubles.
+- Added Belly Drum, Teleport, Sticky Barb, Smeargle/Sketch, Ditto/Transform and Trick/Switcheroo preparation warnings.
+- Perish Song is no longer warned in horde-only encounters, while remaining visible in applicable non-horde encounters.
+- Safari encounters now suppress both battle-safety and start-of-battle slowdown warnings.
+- Full encounter splits now show the exact danger, affected levels and recommended preparation directly beneath each affected Pokémon.
+- Retained the correct Ghost-only Curse check and clarified counters for Head Smash and Memento.
+- Removed weather-dependent Dry Skin/Solar Power and unverified Healing Wish/Lunar Dance warnings until the required encounter context or mechanics can be verified.
+
+## Validation
+
+- 5,927 encounter tables contain at least one context-valid safety warning.
+- 88 Rage Powder tables and 24 Follow Me tables are marked without leaking into true single-only encounters.
+- 66 Belly Drum, 358 Teleport, 105 Sticky Barb, 20 Sketch and 251 Transform tables are covered.
+- Safari warnings: 0.
+- Horde-only Perish Song warnings: 0.
+- Existing 649 Pokémon, 58,375 hunts, 12,400 encounter tables and 2,145 training hordes remain valid.
 # PaxDex v0.23
 
 - Added a dedicated **Training** tab for EV and EXP training.
