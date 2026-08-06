@@ -1,3 +1,14 @@
+# PaxDex v0.26
+
+- Added readable Shiny Hunter URLs such as `#hunter/pikachu`, while keeping old numeric links compatible.
+- Fixed evolution-line roots and ordering by following the actual evolution graph instead of National Pokédex order.
+- Corrected 47 Pokémon entries across 17 families, including later-generation baby Pokémon and branching lines.
+- Redesigned evolution-family displays into proper stages so branching evolutions are no longer shown as a false linear chain.
+- Separated Old Rod, Good Rod and Super Rod across hunt rankings, Route Searcher, Pokédex filters and encounter-speed settings.
+- Kept a broad **Fishing · Any Rod** Pokédex filter for general browsing.
+- Hardened the GitHub Pages workflow against duplicate artifacts when a run is re-triggered.
+- Rebuilt and validated all 649 Pokémon, 66,834 hunt options and 13,755 encounter tables.
+
 # PaxDex v0.25
 
 - Added readable Pokémon detail URLs such as `#pokemon/pikachu`, `#pokemon/mr-mime` and `#pokemon/nidoran-f`.

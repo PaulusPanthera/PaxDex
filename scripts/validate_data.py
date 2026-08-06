@@ -82,6 +82,8 @@ def semantic_categories_for(pid: int, hunt: dict, table: dict) -> list[str]:
     elif method in {"Singles", "Surfing"}:
         if "single" in source_kinds:
             categories.append(method)
+    elif method in {"Old Rod", "Good Rod", "Super Rod"}:
+        categories.extend(["Fishing", method])
     elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
         categories.append(method)
     return categories
@@ -119,6 +121,20 @@ def main() -> int:
     if not safety_rules.get("rules") or int(safety_rules.get("schemaVersion", 0)) < 1:
         errors.append("Safety rules are missing or use an invalid schema version.")
 
+    app_source = (ROOT / "js" / "app.js").read_text(encoding="utf-8")
+    for required in ("function hunterPath(", "function hunterHref(", "resolvePokemonRoute(arg)", "evo-family-stages", "settingsVersion: 6"):
+        if required not in app_source:
+            errors.append(f"Application regression: missing {required!r}.")
+    if '#hunter/${id}' in app_source or 'go(`hunter/${' in app_source:
+        errors.append("Application regression: a numeric Shiny Hunter URL template remains.")
+
+    workflow_path = ROOT / ".github" / "workflows" / "pages.yml"
+    if workflow_path.exists():
+        workflow_source = workflow_path.read_text(encoding="utf-8")
+        attempt_name = "github-pages-${{ github.run_attempt }}"
+        if workflow_source.count(attempt_name) < 2:
+            errors.append("Pages workflow does not use a matching run-attempt-specific artifact name for upload and deploy.")
+
     ids = [int(p["id"]) for p in index]
     if len(ids) != len(set(ids)):
         errors.append("Pokédex index contains duplicate Pokémon IDs.")
@@ -129,23 +145,40 @@ def main() -> int:
     for sprite_kind in ("icons", "icons-shiny", "normal", "shiny"):
         if int(build_info.get("sprites", {}).get(sprite_kind, -1)) != len(index):
             errors.append(f"build-info {sprite_kind} sprite count is {build_info.get('sprites', {}).get(sprite_kind)}, expected {len(index)}.")
+    detail_cache = {pid: load(ROOT / "data" / "pokemon" / f"{pid}.json") for pid in ids}
+    parent_map: dict[int, set[int]] = {pid: set() for pid in ids}
+    for parent_id, detail in detail_cache.items():
+        for evolution in detail.get("evolutions", []):
+            child_id = int(evolution.get("id", 0) or 0)
+            if child_id in parent_map:
+                parent_map[child_id].add(parent_id)
     for p in index:
         pid = int(p["id"])
         line = [int(x) for x in p.get("evolutionLine", [pid])]
         root_id = int(p.get("evolutionRootId", pid))
         if pid not in line:
             errors.append(f"Compact index evolution line for #{pid} does not contain itself.")
-        if root_id != min(line):
-            errors.append(f"Compact index evolution root for #{pid} is {root_id}, expected {min(line)}.")
+        if not line or root_id != line[0]:
+            errors.append(f"Compact index evolution root/order mismatch for #{pid}: root {root_id}, line {line}.")
         if root_id not in ids:
             errors.append(f"Compact index evolution root for #{pid} references missing Pokémon #{root_id}.")
+        if parent_map.get(root_id, set()).intersection(line):
+            errors.append(f"Evolution root #{root_id} for family containing #{pid} has an in-family parent.")
+        detail = detail_cache[pid]
+        if [int(x) for x in detail.get("evolutionLine", [])] != line:
+            errors.append(f"Detail/index evolution line mismatch for #{pid}.")
+        if int(detail.get("evolutionRootId", pid)) != root_id:
+            errors.append(f"Detail/index evolution root mismatch for #{pid}.")
+        stages = [[int(x) for x in stage] for stage in detail.get("evolutionStages", [])]
+        if not stages or [member for stage in stages for member in stage] != line:
+            errors.append(f"Evolution stages do not flatten to the ordered line for #{pid}.")
 
     method_ids = {m["id"] for m in methods}
     method_defaults = {m["id"]: float(m.get("defaultEph", 0)) for m in methods}
     category_ids = [row.get("id") for row in dex_categories]
     if len(category_ids) != len(set(category_ids)) or not all(category_ids):
         errors.append("Pokédex encounter categories contain duplicate or empty IDs.")
-    required_categories = {"Lure", "Lure-exclusive", "Safari", "Special", "Fossil", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing"}
+    required_categories = {"Lure", "Lure-exclusive", "Safari", "Special", "Fossil", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing", "Fishing", "Old Rod", "Good Rod", "Super Rod"}
     if not required_categories.issubset(set(category_ids)):
         errors.append("Pokédex encounter categories are missing required semantic filters.")
 
@@ -175,12 +208,29 @@ def main() -> int:
         errors.append("Default 5× Horde speed must be 1,200 encounters/hour.")
     if method_defaults.get("3× Horde") != 720:
         errors.append("Default 3× Horde speed must be 720 encounters/hour.")
+    for rod in ("Old Rod", "Good Rod", "Super Rod"):
+        if rod not in method_ids:
+            errors.append(f"Missing rod-specific method: {rod}.")
+        if method_defaults.get(rod) != 270:
+            errors.append(f"Default {rod} speed must be 270 encounters/hour until separately measured.")
+
+    expected_family_roots = {25: 172, 35: 173, 106: 236, 107: 236, 122: 439, 143: 446, 242: 440}
+    for member_id, expected_root in expected_family_roots.items():
+        actual = int(by_id.get(member_id, {}).get("evolutionRootId", -1))
+        if actual != expected_root:
+            errors.append(f"Evolution-root regression failed for #{member_id}: got #{actual}, expected #{expected_root}.")
 
     if int(build_info.get("encounterTables", -1)) != len(encounter_tables):
         errors.append(f"build-info table count is {build_info.get('encounterTables')}, generated table file contains {len(encounter_tables)}.")
     if set(phase_previews) != set(encounter_tables):
         errors.append("Phase-preview table IDs do not match the full encounter tables.")
     for table_id, table in encounter_tables.items():
+        encounter_type = str(table.get("encounterType", ""))
+        method = str(table.get("method", ""))
+        if encounter_type in {"Old Rod", "Good Rod", "Super Rod"} and method != encounter_type:
+            errors.append(f"Rod separation failed for table {table_id}: {encounter_type} became {method}.")
+        if encounter_type == "Fishing" and method != "Fishing":
+            errors.append(f"Unspecified Fishing table {table_id} has unexpected method {method}.")
         if table.get("region") not in VALID_REGIONS:
             errors.append(f"Encounter table {table_id} has invalid region {table.get('region')!r}.")
         if table.get("encounterType") not in VALID_ENCOUNTER_TYPES:
@@ -768,7 +818,7 @@ def main() -> int:
     print("VALIDATION PASSED")
     print(f"- {len(index)} Pokédex entries and {hunt_count:,} hunt options loaded")
     print(f"- All Pokémon detail, hunt and sprite files are present, including {len(held_item_ids)} held-item icons")
-    print("- Evolution roots, regions, encounter labels, methods, shares, seasons, times, table references and confidence values are valid")
+    print("- Directed evolution roots/stages, readable Hunter routes, encounter labels, methods, shares and table references are valid")
     print("- No control characters or decorated dump prefixes leaked into published labels")
     print(f"- {len(encounter_tables):,} full encounter tables and {len(route_index):,} route-search rows validated")
     print(f"- {len(training_hordes):,} 5× horde training rows validated, with {len(maximum_ev_hordes):,} maximum-yield EV rows across {len(ev_categories)} categories")

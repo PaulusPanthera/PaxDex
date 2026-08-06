@@ -143,7 +143,10 @@ DEX_CATEGORY_DEFS = [
     {"id": "3× Horde · Split", "label": "3× Horde · Split", "group": "Sweet Scent hordes"},
     {"id": "Singles", "label": "Singles", "group": "Other encounters"},
     {"id": "Surfing", "label": "Surfing", "group": "Other encounters"},
-    {"id": "Fishing", "label": "Fishing", "group": "Other encounters"},
+    {"id": "Fishing", "label": "Fishing · Any Rod", "group": "Fishing"},
+    {"id": "Old Rod", "label": "Old Rod", "group": "Fishing"},
+    {"id": "Good Rod", "label": "Good Rod", "group": "Fishing"},
+    {"id": "Super Rod", "label": "Super Rod", "group": "Fishing"},
     {"id": "Rock Smash", "label": "Rock Smash", "group": "Other encounters"},
     {"id": "Headbutt", "label": "Headbutt", "group": "Other encounters"},
     {"id": "Honey Tree", "label": "Honey Tree", "group": "Other encounters"},
@@ -231,12 +234,16 @@ def parse_rate(value: Any) -> tuple[str, float]:
 def method_for(encounter_type: str, safari: bool, lure: bool = False) -> str:
     if lure:
         return "Lure Safari" if safari else "Lure Singles"
+    # Rod tables stay distinct throughout rankings, filters and settings.
+    # The Safari flag remains attached separately for catch-adjust logic.
+    if encounter_type in {"Old Rod", "Good Rod", "Super Rod"}:
+        return encounter_type
+    if encounter_type == "Fishing":
+        return "Fishing"
     if safari:
         return "Safari"
     if encounter_type == "Water":
         return "Surfing"
-    if encounter_type in {"Old Rod", "Good Rod", "Super Rod", "Fishing"}:
-        return "Fishing"
     if encounter_type == "Rocks":
         return "Rock Smash"
     if encounter_type == "Headbutt":
@@ -407,28 +414,83 @@ def extract_item_icons(zf: zipfile.ZipFile, root: Path, item_ids: set[int]) -> i
             shutil.copy2(fallback_path, target)
     return sum(1 for item_id in item_ids if (out_dir / f"{item_id}.png").exists())
 
-def connected_evolution_lines(monsters: dict[int, dict[str, Any]], max_id: int) -> dict[int, list[int]]:
-    graph: dict[int, set[int]] = {pid: set() for pid in range(1, max_id + 1)}
+def evolution_family_data(
+    monsters: dict[int, dict[str, Any]], max_id: int
+) -> tuple[dict[int, list[int]], dict[int, int], dict[int, list[list[int]]], dict[int, list[dict[str, int]]]]:
+    """Build directed evolution families ordered by actual evolution stage.
+
+    Pokédex number is not evolution order: several baby Pokémon were introduced
+    in later generations. Roots are therefore derived from incoming evolution
+    edges, then each family is ordered breadth-first by stage and Pokédex ID.
+    """
+    children: dict[int, set[int]] = {pid: set() for pid in range(1, max_id + 1)}
+    parents: dict[int, set[int]] = {pid: set() for pid in range(1, max_id + 1)}
+    undirected: dict[int, set[int]] = {pid: set() for pid in range(1, max_id + 1)}
     for pid, mon in monsters.items():
         if pid > max_id:
             continue
         for evo in mon.get("evolutions", []):
             eid = int(evo.get("id", 0) or 0)
             if 1 <= eid <= max_id:
-                graph[pid].add(eid)
-                graph[eid].add(pid)
-    result: dict[int, list[int]] = {}
-    for pid in graph:
-        seen = {pid}
-        q = deque([pid])
-        while q:
-            cur = q.popleft()
-            for nxt in graph[cur]:
-                if nxt not in seen:
-                    seen.add(nxt)
-                    q.append(nxt)
-        result[pid] = sorted(seen)
-    return result
+                children[pid].add(eid)
+                parents[eid].add(pid)
+                undirected[pid].add(eid)
+                undirected[eid].add(pid)
+
+    lines: dict[int, list[int]] = {}
+    roots: dict[int, int] = {}
+    stages_by_pid: dict[int, list[list[int]]] = {}
+    edges_by_pid: dict[int, list[dict[str, int]]] = {}
+    completed: set[int] = set()
+
+    for start in range(1, max_id + 1):
+        if start in completed:
+            continue
+        component = {start}
+        queue = deque([start])
+        while queue:
+            current = queue.popleft()
+            for neighbor in sorted(undirected[current]):
+                if neighbor not in component:
+                    component.add(neighbor)
+                    queue.append(neighbor)
+
+        root_candidates = sorted(pid for pid in component if not (parents[pid] & component))
+        if not root_candidates:
+            root_candidates = [min(component)]
+
+        depth: dict[int, int] = {}
+        queue = deque((pid, 0) for pid in root_candidates)
+        while queue:
+            current, current_depth = queue.popleft()
+            previous = depth.get(current)
+            if previous is not None and previous <= current_depth:
+                continue
+            depth[current] = current_depth
+            for child in sorted(children[current] & component):
+                queue.append((child, current_depth + 1))
+        # Defensive fallback for malformed or partial graphs.
+        fallback_depth = max(depth.values(), default=-1) + 1
+        for pid in component:
+            depth.setdefault(pid, fallback_depth)
+
+        ordered = sorted(component, key=lambda pid: (depth[pid], pid))
+        root_id = min(root_candidates, key=lambda pid: (depth.get(pid, 0), pid))
+        stage_numbers = sorted(set(depth.values()))
+        stages = [[pid for pid in ordered if depth[pid] == stage] for stage in stage_numbers]
+        edges = [
+            {"from": parent, "to": child}
+            for parent in sorted(component)
+            for child in sorted(children[parent] & component)
+        ]
+        for pid in component:
+            lines[pid] = ordered
+            roots[pid] = root_id
+            stages_by_pid[pid] = stages
+            edges_by_pid[pid] = edges
+        completed.update(component)
+
+    return lines, roots, stages_by_pid, edges_by_pid
 
 
 def build(dump_zip: Path, root: Path) -> dict[str, Any]:
@@ -461,7 +523,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         monsters_all = {int(m["id"]): m for m in monsters_raw}
         max_id = min(649, max(monsters_all))
         monsters = {pid: monsters_all[pid] for pid in range(1, max_id + 1) if pid in monsters_all}
-        evo_lines = connected_evolution_lines(monsters, max_id)
+        evo_lines, evo_roots, evo_stages, evo_edges = evolution_family_data(monsters, max_id)
         sprite_counts = extract_sprites(zf, root, max_id)
         item_ids = {
             int(item.get("id"))
@@ -494,7 +556,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             "obtainable": bool(mon.get("obtainable", False)),
             "hasLocations": bool(mon.get("locations")),
             "forms": [f.get("name") for f in forms if f.get("name")],
-            "evolutionRootId": min(evolution_line),
+            "evolutionRootId": evo_roots.get(pid, pid),
             "evolutionLine": evolution_line,
         })
 
@@ -560,7 +622,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 }
                 for evo in mon.get("evolutions", [])
             ],
+            "evolutionRootId": evo_roots.get(pid, pid),
             "evolutionLine": evo_lines.get(pid, [pid]),
+            "evolutionStages": evo_stages.get(pid, [[pid]]),
+            "evolutionEdges": evo_edges.get(pid, []),
             "heldItems": [
                 {**item, "name": clean_decorated_label(item.get("name"))}
                 for item in mon.get("held_items", [])
@@ -1084,6 +1149,8 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             # surfing table are not labelled as ordinary single encounters.
             if "single" in source_kinds:
                 categories.append(method)
+        elif method in {"Old Rod", "Good Rod", "Super Rod"}:
+            categories.extend(["Fishing", method])
         elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
             categories.append(method)
         return categories
@@ -1406,7 +1473,11 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         {"id": "Singles", "label": "Singles", "defaultEph": 220},
         {"id": "Surfing", "label": "Surfing", "defaultEph": 220},
         {"id": "Safari", "label": "Safari", "defaultEph": 300},
-        {"id": "Fishing", "label": "Fishing", "defaultEph": 270},
+        {"id": "Old Rod", "label": "Old Rod", "defaultEph": 270},
+        {"id": "Good Rod", "label": "Good Rod", "defaultEph": 270},
+        {"id": "Super Rod", "label": "Super Rod", "defaultEph": 270},
+        *([{"id": "Fishing", "label": "Fishing · Rod unspecified", "defaultEph": 270}]
+          if any(row.get("method") == "Fishing" for row in route_index) else []),
         {"id": "Rock Smash", "label": "Rock Smash", "defaultEph": 120},
         {"id": "Headbutt", "label": "Headbutt", "defaultEph": 120},
         {"id": "Honey Tree", "label": "Honey Tree", "defaultEph": 0},
@@ -1421,7 +1492,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.25",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.26",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

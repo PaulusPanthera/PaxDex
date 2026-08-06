@@ -1849,3 +1849,13 @@ html[data-theme="dark"] .detail-quick-search input { color:#eef6f0; }
   .detail-page-tools .back-link { margin-bottom:0; }
   .detail-quick-search { width:100%; }
 }
+
+
+/* PaxDex v0.26: directed evolution-family stages */
+.evo-family-stages { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.evo-stage { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.evo-stage-arrow { flex:0 0 auto; color:var(--green); font-size:1.45rem; font-weight:900; }
+@media (max-width:620px) {
+  .evo-family-stages { align-items:flex-start; flex-direction:column; }
+  .evo-stage-arrow { transform:rotate(90deg); align-self:center; }
+}

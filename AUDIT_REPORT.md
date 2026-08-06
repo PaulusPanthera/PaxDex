@@ -1,28 +1,38 @@
-# PaxDex v0.25 Audit Report
+# PaxDex v0.26 Audit Report
 
 ## Result
 
-The readable-URL update and supplied-dump rebuild pass JavaScript syntax, Python compilation, CSS parsing and the complete generated-data validator.
+The v0.26 rebuild passes the complete generated-data validator, independent data-reference audit, JavaScript syntax, Python compilation, CSS parsing and workflow-YAML parsing.
 
-## Navigation checks
+## Hunter navigation
 
-- All 649 Pokémon names produce unique URL slugs.
-- Name routes include stable handling for gender symbols, punctuation and spaces.
-- Numeric routes remain accepted and normalize to their canonical name route.
-- Pokémon cards, encounter pools, full splits, training cards and evolution-family buttons all route to readable Pokémon pages.
-- The detail-page quick search accepts an exact name, slug or Pokédex number.
+- All 649 Pokémon produce unique readable slugs.
+- Shiny Hunter links use `#hunter/<name>` throughout the picker, favorites, Pokédex actions and hunt previews.
+- Numeric links remain accepted and are rewritten to the readable route.
+- Evolution-line mode rewrites evolved-form routes to the actual base-form slug.
+- Pure JavaScript helper smoke tests passed for numeric/name resolution and exact/line target normalization.
 
-## Supplied dump comparison
+## Evolution-family audit
 
-Compared with the dump used for v0.24:
+- 329 directed evolution families validated.
+- Every family root has no in-family parent.
+- Every family member is reachable from its root.
+- Index, detail, stage and root records agree for all 649 Pokémon.
+- 47 Pokémon records across 17 families changed relative to v0.25.
+- Known regressions validate Pichu, Cleffa, Tyrogue, Happiny, Mime Jr., Munchlax and Budew as the correct roots.
+- Branching families such as Eevee, Tyrogue, Wurmple and Nincada have stage-based layouts.
 
-- 79 Pokémon have changed location data.
-- 258 raw location rows were added.
-- 84 raw location rows were removed.
-- 240 of the additions are Lure-marked location rows.
-- The rebuild expands generated data from 58,375 to 66,834 hunt options and from 12,400 to 13,755 encounter tables.
+## Rod separation audit
 
-## Generated-data totals
+Encounter-table methods now match their actual rod type:
+
+- Old Rod: 297 tables, including 30 Safari tables
+- Good Rod: 496 tables, including 44 Safari tables
+- Super Rod: 644 tables, including 42 Safari tables
+
+The same mapping is consistent across encounter tables, per-Pokémon hunt files and Route Searcher rows. Every rod species receives its specific rod category plus the broad Fishing category.
+
+## Generated totals
 
 - 649 Pokémon
 - 66,834 hunt options
@@ -31,14 +41,13 @@ Compared with the dump used for v0.24:
 - 2,145 5× training rows
 - 395 maximum-yield EV rows
 - 124 held-item icons
+- 1,309 JSON files parsed successfully
+- Four complete 649-sprite sets
 
-## Automated checks
+## Deployment workflow
 
-- `node --check js/app.js`: passed
-- `python -m py_compile scripts/build_data.py scripts/validate_data.py`: passed
-- `python scripts/validate_data.py`: passed
-- CSS parsed without errors through `tinycss2`
-- Phase-preview keys and encounter-table keys match
-- All 649 readable slugs are unique
-- Headless Chromium smoke passed for readable routes, quick-search navigation, numeric-link compatibility, special-name slugs and 390 px mobile layout.
-- No browser console or page errors were recorded during the smoke test.
+The Pages upload and deployment steps use the same `github-pages-${{ github.run_attempt }}` artifact name, preventing duplicate-name failures when a workflow run is re-triggered.
+
+## Browser-test limitation
+
+The container's Chromium process could not complete local navigation because its headless runtime hangs on the unavailable system DBus. Therefore the audit does not claim a fresh visual Chromium screenshot pass. Static route/helper tests, generated-data validation, source inspection and all syntax/structure checks passed.

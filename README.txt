@@ -1,13 +1,14 @@
-PAXDEX v0.25 · READABLE POKÉMON LINKS + DUMP REFRESH
+PAXDEX v0.26 · HUNTER LINKS + FAMILY/ROD FIXES
 
 A static PokeMMO Pokédex, shiny hunting route finder, Route Searcher and EV/EXP training finder.
 
-NEW IN v0.25
-- Readable Pokémon URLs such as #pokemon/pikachu
-- Full compatibility with old numeric Pokémon URLs
-- Quick Pokémon search on every detail page
-- Rebuilt encounter data from the supplied 2026-08-06 dump
-- Expanded and corrected location coverage for 79 Pokémon
+NEW IN v0.26
+- Readable Shiny Hunter URLs such as #hunter/pikachu
+- Correct evolution roots and stage ordering from the directed evolution graph
+- Proper stage layout for branching evolution families
+- Separate Old Rod, Good Rod and Super Rod methods across rankings, filters and settings
+- Broad Fishing · Any Rod Pokédex filter remains available
+- Re-run-safe GitHub Pages artifact names
 
 CORE DATA
 - 649 Pokémon
