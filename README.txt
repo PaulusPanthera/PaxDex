@@ -1,19 +1,18 @@
-PAXDEX v0.24 · CONTEXT-AWARE SHINY SAFETY
+PAXDEX v0.25 · READABLE POKÉMON LINKS + DUMP REFRESH
 
 A static PokeMMO Pokédex, shiny hunting route finder, Route Searcher and EV/EXP training finder.
 
-NEW IN v0.24
-- Shared context-aware wild safety rules
-- Rage Powder and Follow Me warnings for multi-opponent encounters
-- Belly Drum, Teleport, Sticky Barb, Sketch, Transform and held-item swap warnings
-- Correct Perish Song handling for hordes
-- Detailed preparation advice inside full encounter splits
-- Safari battle and slowdown warnings fully suppressed
+NEW IN v0.25
+- Readable Pokémon URLs such as #pokemon/pikachu
+- Full compatibility with old numeric Pokémon URLs
+- Quick Pokémon search on every detail page
+- Rebuilt encounter data from the supplied 2026-08-06 dump
+- Expanded and corrected location coverage for 79 Pokémon
 
 CORE DATA
 - 649 Pokémon
-- 58,375 hunt options
-- 12,400 encounter tables / Route Searcher rows
+- 66,834 hunt options
+- 13,755 encounter tables / Route Searcher rows
 - 2,145 ranked 5× training hordes
 - 395 maximum-yield EV rows across 8 categories
 

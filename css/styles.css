@@ -1800,3 +1800,52 @@ html[data-theme="dark"] .split-safety-row.severity-preparation small { color:#b9
   .split-safety-row p,
   .split-safety-row small { grid-column:auto; }
 }
+
+/* v0.25: readable Pokémon URLs and fast detail-page switching */
+.detail-page-tools {
+  display:flex;
+  align-items:end;
+  justify-content:space-between;
+  gap:18px;
+  margin-bottom:18px;
+}
+.detail-page-tools .back-link { margin-bottom:9px; flex:0 0 auto; }
+.detail-quick-search {
+  width:min(560px,100%);
+  display:grid;
+  gap:6px;
+}
+.detail-quick-search label {
+  color:var(--muted);
+  font-size:.7rem;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.detail-quick-search > div {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  padding:6px;
+  background:var(--paper);
+  border:3px solid var(--ink);
+  box-shadow:4px 4px 0 var(--shadow);
+}
+.detail-quick-search input {
+  min-width:0;
+  padding:9px 11px;
+  color:var(--ink);
+  background:transparent;
+  border:0;
+  outline:0;
+  font:inherit;
+  font-weight:800;
+}
+html[data-theme="dark"] .detail-quick-search > div { border-color:#d6e7db; box-shadow:4px 4px 0 #050b08; }
+html[data-theme="dark"] .detail-quick-search input { color:#eef6f0; }
+
+@media (max-width:760px) {
+  .detail-page-tools { align-items:stretch; flex-direction:column; gap:10px; }
+  .detail-page-tools .back-link { margin-bottom:0; }
+  .detail-quick-search { width:100%; }
+}

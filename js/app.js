@@ -4,6 +4,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   pokemon: [],
   pokemonById: new Map(),
+  pokemonBySlug: new Map(),
   methods: [],
   dexCategories: [],
   buildInfo: null,
@@ -386,10 +387,34 @@ function addRecent(id) {
   saveJSON(STORAGE.recent, items.slice(0, 8));
 }
 
+function pokemonSlug(pokemonOrName) {
+  const name = typeof pokemonOrName === "object"
+    ? pokemonOrName?.name
+    : state.pokemonById.get(Number(pokemonOrName))?.name || String(pokemonOrName || "");
+  return String(name)
+    .normalize("NFKD")
+    .replace(/♀/g, " f")
+    .replace(/♂/g, " m")
+    .replace(/[’']/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+function pokemonPath(pokemonOrId) {
+  const pokemon = typeof pokemonOrId === "object" ? pokemonOrId : state.pokemonById.get(Number(pokemonOrId));
+  return pokemon ? `pokemon/${pokemonSlug(pokemon)}` : "pokemon";
+}
+function pokemonHref(pokemonOrId) { return `#${pokemonPath(pokemonOrId)}`; }
+function resolvePokemonRoute(value) {
+  const raw = decodeURIComponent(String(value || "")).trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return state.pokemonById.get(Number(raw)) || null;
+  return state.pokemonBySlug.get(raw.toLowerCase()) || null;
+}
 function findPokemon(query, pool = state.pokemon) {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return null;
-  const exact = pool.find(p => p.name.toLowerCase() === q || String(p.id) === q.replace(/^#/, ""));
+  const exact = pool.find(p => p.name.toLowerCase() === q || pokemonSlug(p) === q || String(p.id) === q.replace(/^#/, ""));
   return exact || pool.find(p => p.name.toLowerCase().includes(q));
 }
 function evolutionRootId(pokemonOrId) {
@@ -589,7 +614,7 @@ function pokemonCard(p, { shiny = settings().shinySprites, target = "pokemon" } 
   const extraCategories = Math.max(0, allCategories.length - categories.length);
   const risks = p.wildSafetyRisks || [];
   return `<article class="pokemon-card ${typeThemeClass(p.types)}" data-pokemon-id="${p.id}">
-    <a class="pokemon-card-link" href="#${target}/${p.id}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
+    <a class="pokemon-card-link" href="${target === "pokemon" ? pokemonHref(p) : `#${target}/${p.id}`}" aria-label="Open ${escapeHtml(p.name)} ${target === "hunter" ? "in Shiny Hunter" : "Pokédex entry"}"></a>
     <div class="pokemon-card-top"><span class="number">#${String(p.id).padStart(3, "0")}</span><span class="generation-tag">${generationLabel(p.id)}</span>${safetyWarning(risks,{compact:true})}</div>
     <button class="favorite-star ${fav ? "on" : ""}" type="button" data-favorite="${p.id}" aria-label="${fav ? "Remove" : "Add"} ${escapeHtml(p.name)} ${fav ? "from" : "to"} favorites">★</button>
     <div class="sprite-box">${imageTag(p.id, p.name, { shiny, icon: true })}</div>
@@ -628,11 +653,11 @@ function renderHome() {
       <small class="today-note">One stable daily pick from the obtainable Pokédex. Changes at your local midnight.</small>
     </button>
   </section>`;
-  $("#today-find")?.addEventListener("click", () => go(`pokemon/${featured.id}`));
+  $("#today-find")?.addEventListener("click", () => go(pokemonPath(featured)));
   $("#home-search").addEventListener("submit", e => {
     e.preventDefault();
     const p = findPokemon(new FormData(e.currentTarget).get("pokemon") || "");
-    if (p) go(`pokemon/${p.id}`); else toast("I couldn't find that Pokémon");
+    if (p) go(pokemonPath(p)); else toast("I couldn't find that Pokémon");
   });
   bindCommonClicks();
 }
@@ -740,7 +765,16 @@ async function renderPokemon(id) {
   const line = detail.evolutionLine.map(x => state.pokemonById.get(x)).filter(Boolean);
   const ranked = groupedHuntPreview(hunts, 5);
   $("#app").innerHTML = `<section class="pokemon-detail-page ${typeThemeClass(p.types)}">
-    <a class="back-link" href="#dex">← Back to Pokédex</a>
+    <div class="detail-page-tools">
+      <a class="back-link" href="#dex">← Back to Pokédex</a>
+      <form class="detail-quick-search" id="detail-quick-search">
+        <label for="detail-pokemon-query">Jump to Pokémon</label>
+        <div>
+          <input id="detail-pokemon-query" name="pokemon" list="pokemon-list" autocomplete="off" placeholder="Name or Pokédex number">
+          <button class="pixel-btn small" type="submit">Open</button>
+        </div>
+      </form>
+    </div>
     <div class="detail-hero">
       <div class="detail-sprite-card ${typeThemeClass(p.types)}">
         <button class="pixel-btn small shiny-toggle ${s.shinySprites?"active":""}" id="detail-shiny">${s.shinySprites?"✨ Shiny":"☆ Normal"}</button>
@@ -781,6 +815,12 @@ async function renderPokemon(id) {
       </aside>
     </div>
   </section>`;
+  $("#detail-quick-search").addEventListener("submit", event => {
+    event.preventDefault();
+    const next = findPokemon(new FormData(event.currentTarget).get("pokemon"));
+    if (next) go(pokemonPath(next));
+    else toast("I couldn't find that Pokémon");
+  });
   $("#detail-shiny").addEventListener("click", () => { const x=settings(); x.shinySprites=!x.shinySprites; saveJSON(STORAGE.settings,x); renderPokemon(id); });
   $("#detail-favorite").addEventListener("click", () => toggleFavorite(id));
   bindCommonClicks();
@@ -867,7 +907,7 @@ function huntPhasePreview(hunt, targetIds = [], { prominent = false } = {}) {
     const risks = safetyWarningsEnabled(hunt) ? (component.safetyRisks || []) : [];
     const riskText = risks.length ? ` · safety: ${safetyRiskText(risks)}` : "";
     const fullTitle = title + riskText;
-    return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="#pokemon/${component.pokemonId}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? safetyWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
+    return `<a class="phase-preview-mon ${isTarget ? "target" : ""} ${risks.length ? "has-wild-risk" : ""}" href="${pokemonHref(component.pokemonId)}" title="${escapeHtml(fullTitle)}" aria-label="${escapeHtml(fullTitle)}">${isTarget ? `<b class="phase-target-badge">Target</b>` : ""}${risks.length ? safetyWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { shiny, icon:true })}<span>${escapeHtml(component.name)}</span></a>`;
   };
   if (allTargets) {
     return `<div class="hunt-phase-preview pure-target ${prominent ? "prominent" : ""}">
@@ -953,7 +993,7 @@ async function openEncounterSplit(h, targetIds = []) {
     const rollLabel = table.method.includes("Horde") ? "of Sweet Scent rolls" : "of encounter rolls";
     return `<article class="split-species ${isTarget ? "target-species" : ""}">
       <div class="split-sprite">${imageTag(component.pokemonId, component.name, {icon:true})}${slowMarker}${riskMarker}</div>
-      <div class="split-species-main"><div class="split-species-title"><a href="#pokemon/${component.pokemonId}">${escapeHtml(component.name)}</a>${isTarget ? `<span class="target-label">${targetIdSet.size > 1 ? "Target line" : "Target"}</span>` : ""}</div>
+      <div class="split-species-main"><div class="split-species-title"><a href="${pokemonHref(component.pokemonId)}">${escapeHtml(component.name)}</a>${isTarget ? `<span class="target-label">${targetIdSet.size > 1 ? "Target line" : "Target"}</span>` : ""}</div>
         <div class="split-metrics">
           <span><strong>${formatPercent(methodRollChance, 1)}</strong> ${rollLabel} contain ${escapeHtml(component.name)}</span>
           <span><strong>${formatPercent(component.share, 1)}</strong> of all Pokémon shown</span>
@@ -1115,7 +1155,7 @@ async function renderHunter(id = null) {
   const familyNames = lineMode ? `<p class="hunter-family-names">${targetPokemon.map(mon => escapeHtml(mon.name)).join(" · ")}</p>` : "";
   $("#app").innerHTML = `<section class="hunter-shell">
     <a class="back-link" href="#hunter">← Choose another Pokémon</a>
-    <div class="hunter-banner">${bannerSprites}<div><span class="eyebrow">${lineMode ? "Evolution-line planner" : "Shiny route planner"}</span><h1>${escapeHtml(targetTitle)}</h1>${familyNames}</div><a class="pixel-btn secondary" href="#pokemon/${id}">Open Pokédex entry</a></div>
+    <div class="hunter-banner">${bannerSprites}<div><span class="eyebrow">${lineMode ? "Evolution-line planner" : "Shiny route planner"}</span><h1>${escapeHtml(targetTitle)}</h1>${familyNames}</div><a class="pixel-btn secondary" href="${pokemonHref(id)}">Open Pokédex entry</a></div>
     <div class="toolbar hunter-filters">
       <div class="field target-scope-field"><label>Target scope</label>${targetModeControl(targetMode, "Target scope")}</div>
       <div class="field"><label>Method</label><select id="hunt-method"><option>All</option>${state.methods.filter(m=>Number(currentSettings.speeds[m.id]||0)>0).map(m=>`<option ${m.id===f.method?"selected":""}>${m.id}</option>`).join("")}</select></div>
@@ -1283,7 +1323,7 @@ function trainingSpeciesPreview(row, { evMode = false } = {}) {
     const detail = evMode
       ? `<small>${component.evYield} ${escapeHtml(component.evStat || "Mixed")}${splitPool ? `<b>${poolShare}</b>` : ""}</small>`
       : `<small>${poolShare} of hordes</small>`;
-    return `<a class="training-species" href="#pokemon/${component.pokemonId}" title="${escapeHtml(title)}">${imageTag(component.pokemonId, component.name, { icon:true })}<span>${escapeHtml(component.name)}</span>${detail}</a>`;
+    return `<a class="training-species" href="${pokemonHref(component.pokemonId)}" title="${escapeHtml(title)}">${imageTag(component.pokemonId, component.name, { icon:true })}<span>${escapeHtml(component.name)}</span>${detail}</a>`;
   }).join("")}</div>`;
 }
 
@@ -1497,7 +1537,7 @@ function bindPokemonCards() {
   }));
 }
 function bindCommonClicks() {
-  $$('[data-open-pokemon]').forEach(btn=>btn.addEventListener('click',()=>go(`pokemon/${btn.dataset.openPokemon}`)));
+  $$('[data-open-pokemon]').forEach(btn=>btn.addEventListener('click',()=>go(pokemonPath(btn.dataset.openPokemon))));
 }
 
 async function renderRoute() {
@@ -1506,7 +1546,15 @@ async function renderRoute() {
   try {
     if (route === "home") renderHome();
     else if (route === "dex") renderDex();
-    else if (route === "pokemon") await renderPokemon(Number(arg));
+    else if (route === "pokemon") {
+      const pokemon = resolvePokemonRoute(arg);
+      if (!pokemon) renderNotFound();
+      else {
+        const canonicalHash = `#${pokemonPath(pokemon)}`;
+        if (location.hash !== canonicalHash) history.replaceState(null, "", canonicalHash);
+        await renderPokemon(pokemon.id);
+      }
+    }
     else if (route === "hunter") await renderHunter(arg ? Number(arg) : null);
     else if (route === "routes") await renderRouteSearcher();
     else if (route === "training") await renderTraining();
@@ -1526,6 +1574,7 @@ async function init() {
       fetchJSON("data/index.json"), fetchJSON("data/methods.json"), fetchJSON("data/dex-categories.json"), fetchJSON("data/build-info.json")
     ]);
     state.pokemonById = new Map(state.pokemon.map(p=>[p.id,p]));
+    state.pokemonBySlug = new Map(state.pokemon.map(p=>[pokemonSlug(p),p]));
     $("#pokemon-list").innerHTML = state.pokemon.map(p=>`<option value="${escapeHtml(p.name)}">#${String(p.id).padStart(3,"0")}</option>`).join("");
     const s = settings();
     if (s.lockSeason && s.currentSeason !== "All") { state.hunterFilters.season = s.currentSeason; state.trainingFilters.season = s.currentSeason; }

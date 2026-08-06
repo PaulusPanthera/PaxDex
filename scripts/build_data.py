@@ -309,6 +309,31 @@ def safe_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
+def write_phase_previews(path: Path, encounter_tables: dict[str, dict[str, Any]]) -> None:
+    """Write compact phase previews without duplicating the full table index in memory."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("{")
+        first_table = True
+        for table_id, table in encounter_tables.items():
+            if not first_table:
+                handle.write(",")
+            first_table = False
+            handle.write(json.dumps(str(table_id), ensure_ascii=False))
+            handle.write(":")
+            preview = [
+                {
+                    "pokemonId": int(component["pokemonId"]),
+                    "name": component["name"],
+                    "share": round(float(component["share"]), 7),
+                    "safetyRisks": component.get("safetyRisks", []),
+                }
+                for component in table.get("components", [])
+            ]
+            handle.write(json.dumps(preview, ensure_ascii=False, separators=(",", ":")))
+        handle.write("}")
+
+
 def pick_zip_member(names: set[str], patterns: list[str]) -> str | None:
     for p in patterns:
         if p in names:
@@ -1371,18 +1396,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
 
     safe_json(data_dir / "safety-rules.json", safety_config)
     safe_json(data_dir / "encounter-tables.json", encounter_tables)
-    safe_json(data_dir / "phase-previews.json", {
-        str(table_id): [
-            {
-                "pokemonId": int(component["pokemonId"]),
-                "name": component["name"],
-                "share": round(float(component["share"]), 7),
-                "safetyRisks": component.get("safetyRisks", []),
-            }
-            for component in table.get("components", [])
-        ]
-        for table_id, table in encounter_tables.items()
-    })
+    write_phase_previews(data_dir / "phase-previews.json", encounter_tables)
 
     methods = [
         {"id": "5× Horde", "label": "5× Horde", "defaultEph": 1200},
@@ -1407,7 +1421,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.24",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.25",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

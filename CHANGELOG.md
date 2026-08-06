@@ -1,3 +1,14 @@
+# PaxDex v0.25
+
+- Added readable Pokémon detail URLs such as `#pokemon/pikachu`, `#pokemon/mr-mime` and `#pokemon/nidoran-f`.
+- Existing numeric links such as `#pokemon/25` remain supported and automatically normalize to the readable URL.
+- Added a compact **Jump to Pokémon** search at the top of every Pokémon detail page.
+- Rebuilt all encounter data from the supplied 2026-08-06 Pokédex dump.
+- Applied location-data changes affecting 79 Pokémon: 258 supplied location rows were added and 84 were removed.
+- Expanded corrected Lure coverage across additional floors, rooms, routes and Safari areas.
+- Updated generated totals to 66,834 hunt options and 13,755 encounter tables / Route Searcher rows.
+- Updated latest-dump regression checks so the broader multi-floor Lure coverage cannot be replaced by an older partial dump.
+
 # PaxDex v0.24
 
 ## Context-aware shiny safety

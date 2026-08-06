@@ -1,35 +1,33 @@
-# PaxDex v0.24 Audit Report
+# PaxDex v0.25 Audit Report
 
 ## Result
 
-The context-aware shiny-safety rebuild passes JavaScript syntax, Python compilation and the complete generated-data validator.
+The readable-URL update and supplied-dump rebuild pass JavaScript syntax, Python compilation, CSS parsing and the complete generated-data validator.
 
-## Safety corrections
+## Navigation checks
 
-- Safari encounter tables contain no active safety warnings and suppress start-delay markers.
-- Perish Song is suppressed in horde-only contexts.
-- Rage Powder and Follow Me appear only where multiple opposing Pokémon may be present.
-- Curse remains restricted to Ghost-type users.
-- Weather-dependent Dry Skin/Solar Power warnings are excluded because the static dump does not expose active encounter weather.
-- Healing Wish, Lunar Dance, forced-switch moves and unverified Drifblim compound behavior remain excluded pending in-game verification.
+- All 649 Pokémon names produce unique URL slugs.
+- Name routes include stable handling for gender symbols, punctuation and spaces.
+- Numeric routes remain accepted and normalize to their canonical name route.
+- Pokémon cards, encounter pools, full splits, training cards and evolution-family buttons all route to readable Pokémon pages.
+- The detail-page quick search accepts an exact name, slug or Pokédex number.
 
-## Added coverage
+## Supplied dump comparison
 
-- Rage Powder: 88 tables
-- Follow Me: 24 tables / 28 affected component rows
-- Belly Drum: 66 tables
-- Teleport: 358 tables
-- Sticky Barb: 105 tables
-- Smeargle / Sketch: 20 tables
-- Ditto / Transform: 251 tables
-- Trick or Switcheroo: 127 tables
+Compared with the dump used for v0.24:
+
+- 79 Pokémon have changed location data.
+- 258 raw location rows were added.
+- 84 raw location rows were removed.
+- 240 of the additions are Lure-marked location rows.
+- The rebuild expands generated data from 58,375 to 66,834 hunt options and from 12,400 to 13,755 encounter tables.
 
 ## Generated-data totals
 
 - 649 Pokémon
-- 58,375 hunt options
-- 12,400 encounter tables
-- 12,400 Route Searcher rows
+- 66,834 hunt options
+- 13,755 encounter tables
+- 13,755 Route Searcher rows
 - 2,145 5× training rows
 - 395 maximum-yield EV rows
 - 124 held-item icons
@@ -39,6 +37,8 @@ The context-aware shiny-safety rebuild passes JavaScript syntax, Python compilat
 - `node --check js/app.js`: passed
 - `python -m py_compile scripts/build_data.py scripts/validate_data.py`: passed
 - `python scripts/validate_data.py`: passed
-- Shared and generated safety-rule files match exactly
-- Phase previews match full encounter-table safety data
-- Browser automation was unavailable in the container; DOM wiring, CSS parsing, syntax and generated data were checked independently.
+- CSS parsed without errors through `tinycss2`
+- Phase-preview keys and encounter-table keys match
+- All 649 readable slugs are unique
+- Headless Chromium smoke passed for readable routes, quick-search navigation, numeric-link compatibility, special-name slugs and 390 px mobile layout.
+- No browser console or page errors were recorded during the smoke test.
