@@ -1,4 +1,4 @@
-PAXDEX v0.26 · HUNTER LINKS + FAMILY/ROD FIXES
+PAXDEX v0.27 · ENCOUNTER PACE DEFAULTS
 
 A static PokeMMO Pokédex, shiny hunting route finder, Route Searcher and EV/EXP training finder.
 

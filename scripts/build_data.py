@@ -1184,6 +1184,12 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         for opt in collapsed:
             opt["availability"].sort(key=lambda x: (season_order.get(x["season"], 99), time_order.get(x["time"], 99)))
         collapsed.sort(key=lambda x: (-x["share"], x["method"], x["region"], x["location"]))
+        for opt in collapsed:
+            table = encounter_tables.get(str(opt.get("tableId")), {})
+            opt["hasSlowdown"] = bool(
+                table.get("slowdownWarningsApplicable", True)
+                and any(component.get("slowAbilities") for component in table.get("components", []))
+            )
         safe_json(data_dir / "hunts" / f"{pid}.json", collapsed)
         hunt_count += len(collapsed)
         lure_exclusive_pairs: set[tuple[str, str]] = set()
@@ -1225,6 +1231,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 "location": opt["location"], "encounterType": opt["encounterType"], "method": opt["method"],
                 "safari": opt["safari"], "confidence": opt["confidence"], "rawTableTotal": opt["rawTableTotal"],
                 "note": opt["note"], "shownTableTotal": opt.get("shownTableTotal"), "containsRandomHordes": opt.get("containsRandomHordes", False),
+                "hasSlowdown": bool(opt.get("hasSlowdown")),
                 **({
                     "safariPool": opt.get("safariPool"),
                     "safetyWarningsApplicable": False,
@@ -1480,7 +1487,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
           if any(row.get("method") == "Fishing" for row in route_index) else []),
         {"id": "Rock Smash", "label": "Rock Smash", "defaultEph": 120},
         {"id": "Headbutt", "label": "Headbutt", "defaultEph": 120},
-        {"id": "Honey Tree", "label": "Honey Tree", "defaultEph": 0},
+        {"id": "Honey Tree", "label": "Honey Tree", "defaultEph": 250},
         {"id": "Special", "label": "Special", "defaultEph": 0},
     ]
     safe_json(data_dir / "methods.json", methods)
@@ -1492,7 +1499,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.26",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.27",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

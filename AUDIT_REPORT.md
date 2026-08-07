@@ -1,53 +1,61 @@
-# PaxDex v0.26 Audit Report
+# PaxDex v0.27 Audit Report
 
 ## Result
 
-The v0.26 rebuild passes the complete generated-data validator, independent data-reference audit, JavaScript syntax, Python compilation, CSS parsing and workflow-YAML parsing.
+PASS. The v0.27 encounter-pace patch rebuilds cleanly from the 2026-08-06 dump and passes the complete generated-data validator, JavaScript syntax, Python compilation and workflow-YAML parsing.
 
-## Hunter navigation
-
-- All 649 Pokémon produce unique readable slugs.
-- Shiny Hunter links use `#hunter/<name>` throughout the picker, favorites, Pokédex actions and hunt previews.
-- Numeric links remain accepted and are rewritten to the readable route.
-- Evolution-line mode rewrites evolved-form routes to the actual base-form slug.
-- Pure JavaScript helper smoke tests passed for numeric/name resolution and exact/line target normalization.
-
-## Evolution-family audit
-
-- 329 directed evolution families validated.
-- Every family root has no in-family parent.
-- Every family member is reachable from its root.
-- Index, detail, stage and root records agree for all 649 Pokémon.
-- 47 Pokémon records across 17 families changed relative to v0.25.
-- Known regressions validate Pichu, Cleffa, Tyrogue, Happiny, Mime Jr., Munchlax and Budew as the correct roots.
-- Branching families such as Eevee, Tyrogue, Wurmple and Nincada have stage-based layouts.
-
-## Rod separation audit
-
-Encounter-table methods now match their actual rod type:
-
-- Old Rod: 297 tables, including 30 Safari tables
-- Good Rod: 496 tables, including 44 Safari tables
-- Super Rod: 644 tables, including 42 Safari tables
-
-The same mapping is consistent across encounter tables, per-Pokémon hunt files and Route Searcher rows. Every rod species receives its specific rod category plus the broad Fishing category.
-
-## Generated totals
+## Data
 
 - 649 Pokémon
 - 66,834 hunt options
-- 13,755 encounter tables
+- 13,755 full encounter tables
 - 13,755 Route Searcher rows
-- 2,145 5× training rows
+- 2,145 ranked 5× training rows
 - 395 maximum-yield EV rows
-- 124 held-item icons
-- 1,309 JSON files parsed successfully
-- Four complete 649-sprite sets
 
-## Deployment workflow
+## Working encounter-pace defaults
 
-The Pages upload and deployment steps use the same `github-pages-${{ github.run_attempt }}` artifact name, preventing duplicate-name failures when a workflow run is re-triggered.
+- 5× Horde: 1,200 Pokémon/hour
+- 5× Horde with possible start-of-battle slowdown: 1,100/hour
+- 3× Horde: 720/hour
+- 3× Horde with possible start-of-battle slowdown: 660/hour
+- Lure Singles: 280/hour
+- Singles: 220/hour
+- Surfing: 220/hour
+- Safari: 300/hour
+- Lure Safari: 300/hour
+- Old Rod: 270/hour
+- Good Rod: 270/hour
+- Super Rod: 270/hour
+- Rock Smash: 120/hour
+- Headbutt: 120/hour
+- Honey Tree: 250/hour, active encounter time only; waiting excluded
 
-## Browser-test limitation
+## Slowdown integration
 
-The container's Chromium process could not complete local navigation because its headless runtime hangs on the unavailable system DBus. Therefore the audit does not claim a fresh visual Chromium screenshot pass. Static route/helper tests, generated-data validation, source inspection and all syntax/structure checks passed.
+- Generated hunt and Route Searcher rows now carry a `hasSlowdown` flag derived from the encounter table's normal wild ability slots.
+- 5× and 3× Horde rankings automatically switch to the slowed pace when that flag is present.
+- Full encounter splits use the same adjusted speed.
+- Route Searcher displays the adjusted pace on affected cards and a range when one filtered location contains both normal and slowed tables.
+- Safari continues to suppress slowdown warnings and therefore does not trigger the slowed-Horde pace.
+
+## Settings migration
+
+- Settings schema bumped to v7.
+- Existing custom encounter speeds are retained.
+- Honey Tree values at the former built-in default of 0 migrate to 250.
+- New slowed Horde fields default to 1,100 / 660 and remain editable.
+
+## Reference values not yet active
+
+The supplied planning sheet also contains Fishing + Lure 340, Fishing + Chum Bucket 460, Fishing + Lure + Chum Bucket 470 and Fossil 530. Those values are documented in the v0.27 notes but are not used in rankings yet because PaxDex does not currently model those modifiers as separate hunt methods. Applying them to unrelated rod/fossil data would produce misleading rankings.
+
+## Checks
+
+- `python scripts/build_data.py dump.zip .`: PASS
+- `python scripts/validate_data.py`: PASS
+- `node --check js/app.js`: PASS
+- `python -m compileall scripts`: PASS
+- Workflow YAML parse: PASS
+- Default pace assertions: PASS
+- Slowdown flag propagation across encounter tables and route rows: PASS

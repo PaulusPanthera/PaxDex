@@ -1,3 +1,11 @@
+# PaxDex v0.27
+
+- Updated the built-in encounter-per-hour planning defaults.
+- Added separate slowdown-adjusted speeds for 5× and 3× Horde locations with start-of-battle ability delays.
+- Shiny Hunter, Route Searcher and full encounter splits now use the slower Horde pace automatically where applicable.
+- Activated Honey Tree planning at 250 encounters/hour, excluding waiting time.
+- Kept Old, Good and Super Rod methods separate at 270 encounters/hour each.
+
 # PaxDex v0.26
 
 - Added readable Shiny Hunter URLs such as `#hunter/pikachu`, while keeping old numeric links compatible.

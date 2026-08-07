@@ -37,7 +37,7 @@ const LEGACY_STORAGE = {
 };
 
 const defaultSettings = () => ({
-  settingsVersion: 6,
+  settingsVersion: 7,
   baseShinyDenominator: 30000,
   donatorStatus: false,
   shinyCharm: 0,
@@ -51,6 +51,7 @@ const defaultSettings = () => ({
   adjustSafariCatch: true,
   hunterTargetMode: "exact",
   speeds: Object.fromEntries(state.methods.map(m => [m.id, m.defaultEph])),
+  slowedSpeeds: { "5× Horde": 1100, "3× Horde": 660 },
 });
 
 function readJSON(key, fallback) {
@@ -62,7 +63,7 @@ function settings() {
   const base = defaultSettings();
   const legacy = readJSON(LEGACY_STORAGE.settings, {});
   const stored = readJSON(STORAGE.settings, {});
-  const merged = { ...base, ...legacy, ...stored, speeds: { ...base.speeds, ...(legacy.speeds || {}), ...(stored.speeds || {}) } };
+  const merged = { ...base, ...legacy, ...stored, speeds: { ...base.speeds, ...(legacy.speeds || {}), ...(stored.speeds || {}) }, slowedSpeeds: { ...base.slowedSpeeds, ...(legacy.slowedSpeeds || {}), ...(stored.slowedSpeeds || {}) } };
   if (!("baseShinyDenominator" in stored) && !("baseShinyDenominator" in legacy) && legacy.shinyDenominator != null) merged.baseShinyDenominator = legacy.shinyDenominator;
 
   // Preserve custom values while migrating new defaults and settings once.
@@ -85,6 +86,17 @@ function settings() {
       if (!(rod in oldSpeeds)) merged.speeds[rod] = inheritedFishingSpeed;
     }
     merged.settingsVersion = 6;
+    if (Object.keys(stored).length || Object.keys(legacy).length) saveJSON(STORAGE.settings, merged);
+  }
+  if (sourceVersion < 7) {
+    const oldSpeeds = { ...(legacy.speeds || {}), ...(stored.speeds || {}) };
+    const oldSlowed = { ...(legacy.slowedSpeeds || {}), ...(stored.slowedSpeeds || {}) };
+    // Honey Tree used to be disabled by default. Adopt the current active-encounter
+    // working assumption only when the user did not already customize it.
+    if (!("Honey Tree" in oldSpeeds) || Number(oldSpeeds["Honey Tree"]) === 0) merged.speeds["Honey Tree"] = 250;
+    if (!("5× Horde" in oldSlowed)) merged.slowedSpeeds["5× Horde"] = 1100;
+    if (!("3× Horde" in oldSlowed)) merged.slowedSpeeds["3× Horde"] = 660;
+    merged.settingsVersion = 7;
     if (Object.keys(stored).length || Object.keys(legacy).length) saveJSON(STORAGE.settings, merged);
   }
   return merged;
@@ -844,11 +856,30 @@ async function renderPokemon(id) {
 function optionAvailable(opt, season, time) {
   return opt.availability.some(a => (season === "All" || a.season === season || a.season === "Any") && (time === "All" || a.time === time));
 }
+function encounterHasSlowdown(row) {
+  return Boolean(row?.hasSlowdown);
+}
+function encounterSpeed(row, s = settings()) {
+  const method = String(row?.method || "");
+  if ((method === "5× Horde" || method === "3× Horde") && encounterHasSlowdown(row)) {
+    const slowed = Number(s.slowedSpeeds?.[method]);
+    if (Number.isFinite(slowed) && slowed >= 0) return slowed;
+  }
+  return Number(s.speeds?.[method] || 0);
+}
+function encounterTableHasSlowdown(table) {
+  if (!table || table.slowdownWarningsApplicable === false) return false;
+  return (table.components || []).some(component => (component.slowAbilities || []).length);
+}
+function encounterTableSpeed(table, s = settings()) {
+  return encounterSpeed({ method: table?.method, hasSlowdown: encounterTableHasSlowdown(table) }, s);
+}
+
 function rankHunts(hunts) {
   const s = settings();
   const denominator = effectiveShinyDenominator(s);
   return hunts.map(h => {
-    const speed = Number(s.speeds[h.method] || 0);
+    const speed = encounterSpeed(h, s);
     const members = h.targetMembers?.length
       ? h.targetMembers
       : [{ pokemonId: null, name: "Target", share: Number(h.share || 0), safariCapture: h.safariCapture || null }];
@@ -978,7 +1009,7 @@ async function openEncounterSplit(h, targetIds = []) {
     content.innerHTML = `<div class="empty-state"><h2>Encounter split unavailable</h2><p>This generated table could not be found.</p></div>`;
     return;
   }
-  const speed = Number(settings().speeds[table.method] || 0);
+  const speed = encounterTableSpeed(table);
   const targetIdSet = new Set((Array.isArray(targetIds) ? targetIds : targetIds ? [targetIds] : []).map(Number));
   const rows = table.components.map(component => {
     const isTarget = targetIdSet.has(Number(component.pokemonId));
@@ -1244,8 +1275,9 @@ async function renderRouteSearcher() {
   setPageTitle("Route Searcher");
   $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Opening route tables…</p></section>`;
   const [routes, encounterTables] = await Promise.all([getRouteIndex(), getEncounterTables()]);
-  const speeds = settings().speeds;
-  const viable = routes.filter(row => Number(speeds[row.method] || 0) > 0);
+  const currentSettings = settings();
+  const speeds = currentSettings.speeds;
+  const viable = routes.filter(row => encounterSpeed(row, currentSettings) > 0);
   const regions = [...new Set(viable.map(row => row.region))].sort();
   const f = state.routeFilters;
   const regionRows = f.region ? viable.filter(row => row.region === f.region) : [];
@@ -1276,6 +1308,8 @@ async function renderRouteSearcher() {
   if (f.time !== "All" && !times.includes(f.time)) f.time = "All";
 
   const results = f.method ? methodRows.filter(row => optionAvailable(row, f.season, f.time)) : [];
+  const routeSpeeds = [...new Set(results.map(row => encounterSpeed(row, currentSettings)))].sort((a,b)=>a-b);
+  const routeSpeedLabel = routeSpeeds.length > 1 ? `${formatNumber(routeSpeeds[0],0)}–${formatNumber(routeSpeeds[routeSpeeds.length-1],0)}` : formatNumber(routeSpeeds[0] || 0, 0);
   const filteredAvailability = row => row.availability.filter(a =>
     (f.season === "All" || a.season === f.season || a.season === "Any") &&
     (f.time === "All" || a.time === f.time)
@@ -1293,7 +1327,7 @@ async function renderRouteSearcher() {
       <button class="pixel-btn ghost route-reset" id="route-reset" type="button">Reset</button>
     </div>
     ${!f.region ? `<div class="route-guide"><strong>Start with a region.</strong><span>Each following choice only shows options that actually exist for the previous selection.</span></div>` : !f.location ? `<div class="route-guide"><strong>${locations.length} viable areas in ${escapeHtml(f.region)}.</strong><span>Choose one to see only the methods available there.</span></div>` : !f.method ? `<div class="route-guide"><strong>${methods.length} viable ${methods.length===1?"method":"methods"} at ${escapeHtml(f.location)}.</strong><span>Choose a method to unlock its viable seasons and times.</span></div>` : ""}
-    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${formatNumber(Number(speeds[f.method]||0),0)}/hr</strong><small>method speed</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary">${routeTableStatus(row)}</div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
+    ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${routeSpeedLabel}/hr</strong><small>${routeSpeeds.length>1?"table-adjusted speed":"method speed"}</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary">${routeTableStatus(row)}${row.hasSlowdown ? `<span>Slowed pace · ${formatNumber(encounterSpeed(row,currentSettings),0)}/hr</span>` : ""}</div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
   </section>`;
 
   $("#route-region").addEventListener("change", e => { state.routeFilters={region:e.target.value,location:"",method:"",season:"All",time:"All"}; renderRouteSearcher(); });
@@ -1491,7 +1525,7 @@ function renderSettings() {
     </div>
     <details class="setting-card speed-settings-card settings-details">
       <summary><span><strong>Encounter pace</strong><small>Edit the per-hour assumptions used for route rankings.</small></span><b>${state.methods.filter(m=>Number(s.speeds[m.id]||0)>0).length} active methods</b></summary>
-      <div class="speed-settings-body"><p class="settings-note">Horde values count individual Pokémon shown, not battle screens.</p><div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div></div>
+      <div class="speed-settings-body"><p class="settings-note">Horde values count individual Pokémon shown, not battle screens. A Horde table with a possible start-of-battle ability delay automatically uses the slowed Horde pace below.</p><div class="speed-grid speed-grid-slowed"><label class="speed-setting slowed-speed-setting"><span><strong>5× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="5× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["5× Horde"]||0)}"></label><label class="speed-setting slowed-speed-setting"><span><strong>3× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="3× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["3× Horde"]||0)}"></label></div><div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div><p class="settings-note">Current working defaults: 5× Horde 1,200; slowed 1,100 · 3× Horde 720; slowed 660 · Lure Singles 280 · Singles/Surfing 220 · Safari/Lure Safari 300 · Old/Good/Super Rod 270 · Rock Smash/Headbutt 120 · Honey Tree 250. Fishing + Lure/Chum and Fossil pace values are not applied until those modifiers are modeled as hunt modes.</p></div>
     </details>
   </section>`;
 
@@ -1513,7 +1547,7 @@ function renderSettings() {
   $("#theme-mode").addEventListener("change", e => applyTheme(e.target.value));
   $("#save-settings").addEventListener("click",()=>{
     const next=settings();
-    next.settingsVersion=6;
+    next.settingsVersion=7;
     next.baseShinyDenominator=Math.max(1,Number($("#base-shiny-denominator").value)||30000);
     next.donatorStatus=$("#boost-donator").checked;
     next.shinyCharm=Number($(".exclusive-boost[data-group='charm']:checked")?.dataset.value||0);
@@ -1522,6 +1556,8 @@ function renderSettings() {
     next.shinySprites=$("#sprite-mode").value==="shiny";
     next.theme=$("#theme-mode").value;
     $$(".speed-input").forEach(x=>next.speeds[x.dataset.method]=Math.max(0,Number(x.value)||0));
+    next.slowedSpeeds = { ...(next.slowedSpeeds || {}) };
+    $$(".slowed-speed-input").forEach(x=>next.slowedSpeeds[x.dataset.method]=Math.max(0,Number(x.value)||0));
     saveJSON(STORAGE.settings,next);
     applyTheme(next.theme); toast("Settings saved");
   });
@@ -1535,7 +1571,7 @@ function renderAbout() {
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
     <div class="about-simple-grid">
       <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits, route comparisons and pure EV/EXP horde rankings by season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
-      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
+      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Horde tables with a possible start-of-battle ability delay can use separate slowed pace assumptions. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
       <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
 }

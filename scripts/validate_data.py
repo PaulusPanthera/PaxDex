@@ -122,7 +122,7 @@ def main() -> int:
         errors.append("Safety rules are missing or use an invalid schema version.")
 
     app_source = (ROOT / "js" / "app.js").read_text(encoding="utf-8")
-    for required in ("function hunterPath(", "function hunterHref(", "resolvePokemonRoute(arg)", "evo-family-stages", "settingsVersion: 6"):
+    for required in ("function hunterPath(", "function hunterHref(", "resolvePokemonRoute(arg)", "evo-family-stages", "settingsVersion: 7"):
         if required not in app_source:
             errors.append(f"Application regression: missing {required!r}.")
     if '#hunter/${id}' in app_source or 'go(`hunter/${' in app_source:
@@ -807,6 +807,27 @@ def main() -> int:
     if not any(c.get("safariCapture") for table in encounter_tables.values() for c in table.get("components", [])):
         errors.append("No Safari catch estimates were attached to encounter tables.")
 
+    # v0.27 encounter-pace defaults and slowdown propagation.
+    method_defaults = {row.get("id"): row.get("defaultEph") for row in methods}
+    expected_defaults = {
+        "5× Horde": 1200, "3× Horde": 720, "Lure Singles": 280,
+        "Lure Safari": 300, "Singles": 220, "Surfing": 220, "Safari": 300,
+        "Old Rod": 270, "Good Rod": 270, "Super Rod": 270,
+        "Rock Smash": 120, "Headbutt": 120, "Honey Tree": 250,
+    }
+    for method, expected in expected_defaults.items():
+        if method_defaults.get(method) != expected:
+            errors.append(f"Unexpected default pace for {method}: {method_defaults.get(method)} != {expected}")
+    route_by_table = {str(row.get("tableId")): row for row in route_index}
+    for table_id, table in encounter_tables.items():
+        expected_slow = bool(
+            table.get("slowdownWarningsApplicable", True)
+            and any(component.get("slowAbilities") for component in table.get("components", []))
+        )
+        route_row = route_by_table.get(str(table_id))
+        if route_row and bool(route_row.get("hasSlowdown")) != expected_slow:
+            errors.append(f"Route table {table_id} slowdown flag does not match components.")
+
     if errors:
         print("VALIDATION FAILED")
         for error in errors[:100]:
@@ -836,7 +857,7 @@ def main() -> int:
     print("- Route 229 Autumn Night 5× Horde = Ariados 40%, Volbeat 30%, Illumise 30%")
     print("- Natural 5% horde blocks are included in Singles and Lure Singles, then extracted separately for Sweet Scent")
     print("- Route 32 Lure table = 95% scaled base outcomes + 5% lure-exclusive outcome; 1.095 Pokémon shown per roll")
-    print("- Default horde speeds = 1,200 / 720 encounters per hour")
+    print("- Default horde speeds = 1,200 / 720; slowdown-adjusted horde speeds = 1,100 / 660 encounters per hour")
     print(f"- Confidence totals: High {confidence_counts['High']:,}, Medium {confidence_counts['Medium']:,}, Low {confidence_counts['Low']:,}")
     if warnings:
         print("WARNINGS")
