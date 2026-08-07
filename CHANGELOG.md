@@ -1,3 +1,13 @@
+# Changelog
+
+## v0.28 · Fishing modifiers, Fossils and Altering Cave
+
+- Added Fishing + Lure, Fishing + Chum Bucket and Fishing + both as ranked hunt methods with 340 / 460 / 470 encounters per hour.
+- Kept Old/Good/Super Rod encounter pools intact while applying the modifier speed to the same exact rod table.
+- Added deterministic Fossil revival hunts at 530 revivals/hour for all 9 directly revivable fossil species.
+- Added an Altering Cave rotation planner from the supplied Team Méw community data, with Dark Rotation 3 inferred as the current supplied pool.
+- Kept Altering Cave out of target encounters/hour rankings until exact encounter percentages are available.
+
 # PaxDex v0.27
 
 - Updated the built-in encounter-per-hour planning defaults.

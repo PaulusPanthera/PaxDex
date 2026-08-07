@@ -14,10 +14,12 @@ const state = {
   phasePreviews: null,
   routeIndex: null,
   trainingIndex: null,
+  alteringCave: null,
   activeHuntMap: new Map(),
   dexPage: 1,
   dexFilters: { query: "", category: "All", season: "All", time: "All", generation: "All", availability: "Obtainable" },
   routeFilters: { region: "", location: "", method: "", season: "All", time: "All" },
+  alteringFilters: { type: "", rotation: "" },
   trainingFilters: { mode: "ev", stat: "HP", region: "All", season: "All", time: "All" },
   trainingVisible: 40,
   hunterFilters: { method: "All", region: "All", season: "All", time: "All", confidence: "All" },
@@ -37,7 +39,7 @@ const LEGACY_STORAGE = {
 };
 
 const defaultSettings = () => ({
-  settingsVersion: 7,
+  settingsVersion: 8,
   baseShinyDenominator: 30000,
   donatorStatus: false,
   shinyCharm: 0,
@@ -97,6 +99,10 @@ function settings() {
     if (!("5× Horde" in oldSlowed)) merged.slowedSpeeds["5× Horde"] = 1100;
     if (!("3× Horde" in oldSlowed)) merged.slowedSpeeds["3× Horde"] = 660;
     merged.settingsVersion = 7;
+    if (Object.keys(stored).length || Object.keys(legacy).length) saveJSON(STORAGE.settings, merged);
+  }
+  if (sourceVersion < 8) {
+    merged.settingsVersion = 8;
     if (Object.keys(stored).length || Object.keys(legacy).length) saveJSON(STORAGE.settings, merged);
   }
   return merged;
@@ -370,6 +376,10 @@ async function getRouteIndex() {
 async function getTrainingIndex() {
   if (!state.trainingIndex) state.trainingIndex = await fetchJSON("data/training-index.json");
   return state.trainingIndex;
+}
+async function getAlteringCave() {
+  if (!state.alteringCave) state.alteringCave = await fetchJSON("data/altering-cave.json");
+  return state.alteringCave;
 }
 
 function setActiveNav(route) {
@@ -1100,7 +1110,7 @@ async function renderHunter(id = null) {
 
   const saveTargetMode = mode => {
     const next = settings();
-    next.settingsVersion = 6;
+    next.settingsVersion = 8;
     next.hunterTargetMode = normalizedTargetMode(mode);
     saveJSON(STORAGE.settings, next);
   };
@@ -1270,11 +1280,27 @@ function routeSpeciesPreview(table) {
   return `<div class="route-species-preview">${components.map(component => { const risks=risksApplicable ? (component.safetyRisks||[]) : []; const title=`${component.name} · ${formatPercent(component.share)}${risks.length ? ` · safety: ${safetyRiskText(risks)}` : ""}`; return `<span class="${risks.length ? "has-wild-risk" : ""}" title="${escapeHtml(title)}">${risks.length ? safetyWarning(risks,{compact:true}) : ""}${imageTag(component.pokemonId, component.name, { icon:true })}<small>${escapeHtml(component.name)}</small></span>`; }).join("")}${table.components.length > components.length ? `<b>+${table.components.length - components.length}</b>` : ""}</div>`;
 }
 
+function alteringSpeciesStrip(rows = []) {
+  if (!rows.length) return `<span class="altering-empty">No species listed in the supplied sheet.</span>`;
+  return `<div class="altering-species-strip">${rows.map(row => `<a href="${pokemonHref(row.pokemonId)}" class="altering-species" title="${escapeHtml(row.name)}">${imageTag(row.pokemonId,row.name,{icon:true})}<span>${escapeHtml(row.name)}</span></a>`).join("")}</div>`;
+}
+function alteringCavePanel(data) {
+  const typeNames = Object.keys(data.types || {});
+  if (!state.alteringFilters.type || !data.types?.[state.alteringFilters.type]) state.alteringFilters.type = data.current?.type || typeNames[0] || "";
+  const type = state.alteringFilters.type;
+  const rotations = Object.keys(data.types?.[type]?.rotations || {}).sort((a,b)=>Number(a)-Number(b));
+  if (!state.alteringFilters.rotation || !rotations.includes(String(state.alteringFilters.rotation))) state.alteringFilters.rotation = type === data.current?.type && rotations.includes(String(data.current?.rotation)) ? String(data.current.rotation) : (rotations[0] || "");
+  const rotation = String(state.alteringFilters.rotation);
+  const pool = data.types?.[type]?.rotations?.[rotation] || {singles:[],hordes:[]};
+  const isCurrent = type === data.current?.type && Number(rotation) === Number(data.current?.rotation);
+  return `<section class="altering-cave-panel"><div class="altering-head"><div><span class="eyebrow">Community rotation data</span><h2>Altering Cave</h2><p>Explore the supplied type/rotation pools. Exact encounter percentages are not in the source, so these entries are intentionally excluded from encounters/hour rankings.</p></div>${isCurrent ? `<span class="altering-current">Current sheet pool</span>` : ""}</div><div class="altering-controls"><label class="field"><span>Type pool</span><select id="altering-type">${typeNames.map(name=>`<option value="${escapeHtml(name)}" ${name===type?"selected":""}>${escapeHtml(name)}</option>`).join("")}</select></label><label class="field"><span>Rotation</span><select id="altering-rotation">${rotations.map(value=>`<option value="${value}" ${value===rotation?"selected":""}>Rotation ${value}${type===data.current?.type && Number(value)===Number(data.current?.rotation)?" · current":""}</option>`).join("")}</select></label></div><div class="altering-pools"><article><div class="altering-pool-title"><strong>Singles</strong><small>${pool.singles.length} listed species</small></div>${alteringSpeciesStrip(pool.singles)}</article><article><div class="altering-pool-title"><strong>Hordes</strong><small>${pool.hordes.length} listed species</small></div>${alteringSpeciesStrip(pool.hordes)}${type==="Dark" ? `<p class="altering-note">Zorua is listed at <strong>1%</strong> in all Dark hordes.</p>` : ""}</article></div><p class="altering-source"><strong>Source:</strong> Team Méw Altering Cave sheet · @rsslunar · @hekation · @kithri · @lorddusk. ${isCurrent ? escapeHtml(data.current?.basis || "") : ""}</p></section>`;
+}
+
 async function renderRouteSearcher() {
   setActiveNav("routes");
   setPageTitle("Route Searcher");
   $("#app").innerHTML = `<section class="loading-screen"><div class="pixel-loader"></div><p>Opening route tables…</p></section>`;
-  const [routes, encounterTables] = await Promise.all([getRouteIndex(), getEncounterTables()]);
+  const [routes, encounterTables, alteringCave] = await Promise.all([getRouteIndex(), getEncounterTables(), getAlteringCave()]);
   const currentSettings = settings();
   const speeds = currentSettings.speeds;
   const viable = routes.filter(row => encounterSpeed(row, currentSettings) > 0);
@@ -1318,6 +1344,7 @@ async function renderRouteSearcher() {
 
   $("#app").innerHTML = `<section class="route-searcher-page">
     <div class="section-head"><div><span class="eyebrow">Encounter browser</span><h1 class="page-title">Route Searcher</h1><p>Choose a region, route and method, then narrow the exact encounter tables by season and time.</p></div></div>
+    ${alteringCavePanel(alteringCave)}
     <div class="route-cascade" aria-label="Route search filters">
       <label class="route-step"><span><b>1</b> Region</span><select id="route-region"><option value="">Choose a region…</option>${regions.map(x=>`<option value="${escapeHtml(x)}" ${x===f.region?"selected":""}>${escapeHtml(x)}</option>`).join("")}</select></label>
       <label class="route-step ${!f.region?"disabled-step":""}"><span><b>2</b> Route or area</span><select id="route-location" ${!f.region?"disabled":""}><option value="">${f.region?"Choose a route…":"Select a region first"}</option>${locations.map(x=>`<option value="${escapeHtml(x)}" ${x===f.location?"selected":""}>${escapeHtml(x)}</option>`).join("")}</select></label>
@@ -1330,6 +1357,8 @@ async function renderRouteSearcher() {
     ${results.length ? `<div class="route-results-head"><div><h2>${escapeHtml(f.location)}</h2><p>${escapeHtml(f.region)} · ${escapeHtml(filterSummary)} · ${results.length} ${results.length===1?"encounter table":"encounter tables"}</p></div><div class="route-speed"><strong>${routeSpeedLabel}/hr</strong><small>${routeSpeeds.length>1?"table-adjusted speed":"method speed"}</small></div></div><div class="route-result-grid">${results.map((row,i)=>`<article class="route-result-card"><div class="route-card-title"><span class="route-result-number">${i+1}</span><span><strong>${escapeHtml(row.encounterType)}</strong><small>Encounter table ${i+1}</small></span></div>${routeSpeciesPreview(encounterTables[String(row.tableId)])}<div class="availability-feature">${availabilityVisual(filteredAvailability(row))}</div><div class="split-summary">${routeTableStatus(row)}${row.hasSlowdown ? `<span>Slowed pace · ${formatNumber(encounterSpeed(row,currentSettings),0)}/hr</span>` : ""}</div><button class="pixel-btn small" type="button" data-route-table="${row.tableId}">View full split</button></article>`).join("")}</div>` : f.method ? `<div class="empty-state"><h2>No table matches these filters</h2><p>Try another season or time.</p></div>` : ""}
   </section>`;
 
+  $("#altering-type")?.addEventListener("change", e => { state.alteringFilters.type=e.target.value; state.alteringFilters.rotation=""; renderRouteSearcher(); });
+  $("#altering-rotation")?.addEventListener("change", e => { state.alteringFilters.rotation=e.target.value; renderRouteSearcher(); });
   $("#route-region").addEventListener("change", e => { state.routeFilters={region:e.target.value,location:"",method:"",season:"All",time:"All"}; renderRouteSearcher(); });
   $("#route-location").addEventListener("change", e => { Object.assign(state.routeFilters,{location:e.target.value,method:"",season:"All",time:"All"}); renderRouteSearcher(); });
   $("#route-method").addEventListener("change", e => { Object.assign(state.routeFilters,{method:e.target.value,season:"All",time:"All"}); renderRouteSearcher(); });
@@ -1525,7 +1554,7 @@ function renderSettings() {
     </div>
     <details class="setting-card speed-settings-card settings-details">
       <summary><span><strong>Encounter pace</strong><small>Edit the per-hour assumptions used for route rankings.</small></span><b>${state.methods.filter(m=>Number(s.speeds[m.id]||0)>0).length} active methods</b></summary>
-      <div class="speed-settings-body"><p class="settings-note">Horde values count individual Pokémon shown, not battle screens. A Horde table with a possible start-of-battle ability delay automatically uses the slowed Horde pace below.</p><div class="speed-grid speed-grid-slowed"><label class="speed-setting slowed-speed-setting"><span><strong>5× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="5× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["5× Horde"]||0)}"></label><label class="speed-setting slowed-speed-setting"><span><strong>3× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="3× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["3× Horde"]||0)}"></label></div><div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div><p class="settings-note">Current working defaults: 5× Horde 1,200; slowed 1,100 · 3× Horde 720; slowed 660 · Lure Singles 280 · Singles/Surfing 220 · Safari/Lure Safari 300 · Old/Good/Super Rod 270 · Rock Smash/Headbutt 120 · Honey Tree 250. Fishing + Lure/Chum and Fossil pace values are not applied until those modifiers are modeled as hunt modes.</p></div>
+      <div class="speed-settings-body"><p class="settings-note">Horde values count individual Pokémon shown, not battle screens. A Horde table with a possible start-of-battle ability delay automatically uses the slowed Horde pace below.</p><div class="speed-grid speed-grid-slowed"><label class="speed-setting slowed-speed-setting"><span><strong>5× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="5× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["5× Horde"]||0)}"></label><label class="speed-setting slowed-speed-setting"><span><strong>3× Horde · slowed</strong><small>Pokémon / hour</small></span><input class="slowed-speed-input" data-method="3× Horde" type="number" min="0" step="1" value="${Number(s.slowedSpeeds?.["3× Horde"]||0)}"></label></div><div class="speed-grid">${state.methods.map(m=>`<label class="speed-setting"><span><strong>${escapeHtml(m.label)}</strong><small>Pokémon / hour</small></span><input class="speed-input" data-method="${escapeHtml(m.id)}" type="number" min="0" step="1" value="${Number(s.speeds[m.id]||0)}"></label>`).join("")}</div><p class="settings-note">Current working defaults: 5× Horde 1,200; slowed 1,100 · 3× Horde 720; slowed 660 · Lure Singles 280 · Singles/Surfing 220 · Safari/Lure Safari 300 · Old/Good/Super Rod 270 · Fishing + Lure 340 · + Chum Bucket 460 · Lure + Chum 470 · Fossil 530 · Rock Smash/Headbutt 120 · Honey Tree 250.</p></div>
     </details>
   </section>`;
 
@@ -1547,7 +1576,7 @@ function renderSettings() {
   $("#theme-mode").addEventListener("change", e => applyTheme(e.target.value));
   $("#save-settings").addEventListener("click",()=>{
     const next=settings();
-    next.settingsVersion=7;
+    next.settingsVersion=8;
     next.baseShinyDenominator=Math.max(1,Number($("#base-shiny-denominator").value)||30000);
     next.donatorStatus=$("#boost-donator").checked;
     next.shinyCharm=Number($(".exclusive-boost[data-group='charm']:checked")?.dataset.value||0);
@@ -1571,8 +1600,8 @@ function renderAbout() {
   $("#app").innerHTML = `<section><div class="section-head"><div><span class="eyebrow">About this project</span><h1 class="page-title">About PaxDex</h1><p>A route-first PokeMMO Pokédex built for quick browsing and practical shiny planning.</p></div></div>
     <div class="about-simple-grid">
       <article class="setting-card"><h2>What PaxDex does</h2><p>PaxDex turns the Pokédex dump into compact Pokémon pages, complete encounter splits, route comparisons and pure EV/EXP horde rankings by season and time.</p><p>The Shiny Hunter can rank one exact form or combine every wild form in an evolution line.</p></article>
-      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Horde tables with a possible start-of-battle ability delay can use separate slowed pace assumptions. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
-      <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
+      <article class="setting-card"><h2>How hunt rankings work</h2><p>Routes are ordered by expected target Pokémon shown per hour using the encounter split and your editable method speeds. Horde tables with a possible start-of-battle ability delay can use separate slowed pace assumptions. Shiny boosts affect the time estimate, not the encounter order.</p><p>The Pokédex uses broader encounter categories: Lure includes every species with a Lure-enabled spot, while Lure-exclusive is reserved for species with no non-Lure wild encounter. Fishing modifiers reuse the same rod species pools while applying their own editable pace assumptions. Fossil hunts represent deterministic revival of the selected fossil species. Special contains phenomena and other non-standard dump encounters; Fossil contains the revival families. Horde cards may keep both labels, but Split search hides a species when it also has a 100% horde of that size.</p><p>Wild danger markers use the current level-up moves at each encounter level plus normal ability slots; hidden abilities are excluded. Safari views hide battle-only danger markers, and known Johto Safari and Great Marsh hunts can optionally use community catch estimates.</p></article>
+      <article class="setting-card"><h2>Data, privacy and credits</h2><p><strong>Current data:</strong> ${state.buildInfo.pokemon} Pokémon, ${Number(state.buildInfo.huntOptions).toLocaleString()} hunt options and ${Number(state.buildInfo.encounterTables || 0).toLocaleString()} encounter splits from <code>dump.zip</code>.</p><p>Favorites and settings stay in this browser on this device. PaxDex has no account system or server-side tracking.</p><p class="credit-line">Made from PokeMMO Pokedex dump with AI usage by [MÜSH] PaulusPax</p><p><strong>Safari estimates:</strong> <a href="https://github.com/ProfessorRex/HGSS-Safari-Zone" target="_blank" rel="noopener noreferrer">ProfessorRex/HGSS-Safari-Zone</a>.</p><p><strong>Altering Cave rotation data:</strong> Team Méw · @rsslunar · @hekation · @kithri · @lorddusk. Pool membership is shown from the supplied community sheet; encounter percentages are not inferred.</p><p class="project-disclaimer">Unofficial fan-made companion. PaxDex is not affiliated with PokeMMO or The Pokémon Company.</p></article>
     </div></section>`;
 }
 

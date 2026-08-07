@@ -131,6 +131,26 @@ FOSSIL_SPECIES = {
     564, 565, 566, 567,
 }
 
+# Species that are directly revived from a fossil item. Evolved family members
+# remain in the Pokédex Fossil category, but only these receive a 100% Fossil hunt.
+FOSSIL_REVIVALS = {
+    138: "Helix Fossil",
+    140: "Dome Fossil",
+    142: "Old Amber",
+    345: "Root Fossil",
+    347: "Claw Fossil",
+    408: "Skull Fossil",
+    410: "Armor Fossil",
+    564: "Cover Fossil",
+    566: "Plume Fossil",
+}
+
+FISHING_MODIFIER_METHODS = {
+    "Fishing + Lure": 340,
+    "Fishing + Chum Bucket": 460,
+    "Fishing + Lure + Chum Bucket": 470,
+}
+
 DEX_CATEGORY_DEFS = [
     {"id": "Lure", "label": "Lure", "group": "Special pools"},
     {"id": "Lure-exclusive", "label": "Lure-exclusive", "group": "Special pools"},
@@ -147,6 +167,9 @@ DEX_CATEGORY_DEFS = [
     {"id": "Old Rod", "label": "Old Rod", "group": "Fishing"},
     {"id": "Good Rod", "label": "Good Rod", "group": "Fishing"},
     {"id": "Super Rod", "label": "Super Rod", "group": "Fishing"},
+    {"id": "Fishing + Lure", "label": "Fishing + Lure", "group": "Fishing"},
+    {"id": "Fishing + Chum Bucket", "label": "Fishing + Chum Bucket", "group": "Fishing"},
+    {"id": "Fishing + Lure + Chum Bucket", "label": "Fishing + Lure + Chum Bucket", "group": "Fishing"},
     {"id": "Rock Smash", "label": "Rock Smash", "group": "Other encounters"},
     {"id": "Headbutt", "label": "Headbutt", "group": "Other encounters"},
     {"id": "Honey Tree", "label": "Honey Tree", "group": "Other encounters"},
@@ -1094,6 +1117,22 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 contains_random_hordes=includes_hordes,
             )
 
+            # Fishing pace modifiers do not alter the species table in the supplied
+            # Pokédex data; they are modeled as additional hunt modes over the same
+            # Old/Good/Super Rod encounter split. The rod remains visible as the
+            # encounter type while the method carries the speed modifier.
+            if method in {"Old Rod", "Good Rod", "Super Rod", "Fishing"}:
+                for modifier_method in FISHING_MODIFIER_METHODS:
+                    modifier_note = (
+                        f"{modifier_method} uses the same {original_sample['encounterType']} species pool; "
+                        "only the editable encounters/hour assumption changes."
+                    )
+                    add_table_options(
+                        random_table, modifier_method, raw_event_total=raw_event_total,
+                        confidence_override=confidence, note_override=modifier_note,
+                        contains_random_hordes=includes_hordes,
+                    )
+
             # Lure variant: 95% of the complete random-encounter table (including
             # natural hordes) plus a 5% lure-exclusive encounter roll.
             if method in {"Singles", "Surfing", "Safari"}:
@@ -1129,6 +1168,23 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
             add_contribution(weighted, pid, row, event_rate, size, "sweet-scent", label)
         add_table_options(weighted, f"{size}× Horde", horde=True, raw_event_total=raw_event_total)
 
+    # Fossil hunting is deterministic by fossil item: when the chosen fossil revives,
+    # its species share is 100%. Add one synthetic table per directly revivable base
+    # species so Shiny Hunter can use the supplied 530 revivals/hour assumption.
+    for pid, fossil_name in FOSSIL_REVIVALS.items():
+        for time in TIMES:
+            row = {
+                "rate": 1.0, "eventRate": 1.0, "minLevel": 0, "maxLevel": 0,
+                "region": "Global", "locationId": -pid,
+                "location": f"Fossil Revival · {fossil_name}",
+                "encounterType": "Fossil", "season": "Any", "time": time, "safari": False,
+                "sources": [{"kind": "fossil", "label": fossil_name, "eventRate": 1.0, "count": 1, "shownWeight": 1.0}],
+            }
+            add_table_options(
+                {pid: row}, "Fossil", raw_event_total=1.0, confidence_override="High",
+                note_override=f"100% {monsters[pid].get('name', f'Pokémon {pid}')} when reviving a {fossil_name}.",
+            )
+
     def dex_categories_for_option(pid: int, opt: dict[str, Any]) -> list[str]:
         table = encounter_tables.get(str(opt.get("tableId")), {})
         component = next((row for row in table.get("components", []) if int(row.get("pokemonId", -1)) == pid), None)
@@ -1151,7 +1207,9 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
                 categories.append(method)
         elif method in {"Old Rod", "Good Rod", "Super Rod"}:
             categories.extend(["Fishing", method])
-        elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
+        elif method in FISHING_MODIFIER_METHODS:
+            categories.extend(["Fishing", method])
+        elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special", "Fossil"}:
             categories.append(method)
         return categories
 
@@ -1485,6 +1543,10 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         {"id": "Super Rod", "label": "Super Rod", "defaultEph": 270},
         *([{"id": "Fishing", "label": "Fishing · Rod unspecified", "defaultEph": 270}]
           if any(row.get("method") == "Fishing" for row in route_index) else []),
+        {"id": "Fishing + Lure", "label": "Fishing + Lure", "defaultEph": 340},
+        {"id": "Fishing + Chum Bucket", "label": "Fishing + Chum Bucket", "defaultEph": 460},
+        {"id": "Fishing + Lure + Chum Bucket", "label": "Fishing + Lure + Chum Bucket", "defaultEph": 470},
+        {"id": "Fossil", "label": "Fossil", "defaultEph": 530},
         {"id": "Rock Smash", "label": "Rock Smash", "defaultEph": 120},
         {"id": "Headbutt", "label": "Headbutt", "defaultEph": 120},
         {"id": "Honey Tree", "label": "Honey Tree", "defaultEph": 250},
@@ -1499,7 +1561,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.27",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.28",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

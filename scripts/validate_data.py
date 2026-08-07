@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VALID_SEASONS = {"Any", "Spring", "Summer", "Autumn", "Winter"}
 VALID_TIMES = {"Morning", "Day", "Night"}
-VALID_REGIONS = {"Kanto", "Hoenn", "Unova", "Sinnoh", "Johto"}
-VALID_ENCOUNTER_TYPES = {"Grass", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud"}
+VALID_REGIONS = {"Kanto", "Hoenn", "Unova", "Sinnoh", "Johto", "Global"}
+VALID_ENCOUNTER_TYPES = {"Grass", "Cave", "Sweet Scent", "Dark Grass", "Headbutt", "Inside", "Shadow", "Water", "Good Rod", "Super Rod", "Old Rod", "Fishing", "Rocks", "Honey Tree", "Dust Cloud", "Fossil"}
 REQUIRED_HUNT_KEYS = {
     "region", "location", "encounterType", "method", "share", "minLevel",
     "maxLevel", "confidence", "note", "availability", "tableId"
@@ -84,7 +85,9 @@ def semantic_categories_for(pid: int, hunt: dict, table: dict) -> list[str]:
             categories.append(method)
     elif method in {"Old Rod", "Good Rod", "Super Rod"}:
         categories.extend(["Fishing", method])
-    elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special"}:
+    elif method in {"Fishing + Lure", "Fishing + Chum Bucket", "Fishing + Lure + Chum Bucket"}:
+        categories.extend(["Fishing", method])
+    elif method in {"Fishing", "Rock Smash", "Headbutt", "Honey Tree", "Special", "Fossil"}:
         categories.append(method)
     return categories
 
@@ -103,6 +106,7 @@ def main() -> int:
         training_index = load(ROOT / "data" / "training-index.json")
         safari_rates = load(ROOT / "data" / "safari-rates.json")
         safety_rules = load(ROOT / "data" / "safety-rules.json")
+        altering_cave = load(ROOT / "data" / "altering-cave.json")
     except Exception as exc:
         print("VALIDATION FAILED")
         print(f"- Could not load core data: {exc}")
@@ -122,7 +126,7 @@ def main() -> int:
         errors.append("Safety rules are missing or use an invalid schema version.")
 
     app_source = (ROOT / "js" / "app.js").read_text(encoding="utf-8")
-    for required in ("function hunterPath(", "function hunterHref(", "resolvePokemonRoute(arg)", "evo-family-stages", "settingsVersion: 7"):
+    for required in ("function hunterPath(", "function hunterHref(", "resolvePokemonRoute(arg)", "evo-family-stages", "settingsVersion: 8"):
         if required not in app_source:
             errors.append(f"Application regression: missing {required!r}.")
     if '#hunter/${id}' in app_source or 'go(`hunter/${' in app_source:
@@ -178,7 +182,7 @@ def main() -> int:
     category_ids = [row.get("id") for row in dex_categories]
     if len(category_ids) != len(set(category_ids)) or not all(category_ids):
         errors.append("Pokédex encounter categories contain duplicate or empty IDs.")
-    required_categories = {"Lure", "Lure-exclusive", "Safari", "Special", "Fossil", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing", "Fishing", "Old Rod", "Good Rod", "Super Rod"}
+    required_categories = {"Lure", "Lure-exclusive", "Safari", "Special", "Fossil", "5× Horde · 100%", "5× Horde · Split", "3× Horde · 100%", "3× Horde · Split", "Singles", "Surfing", "Fishing", "Old Rod", "Good Rod", "Super Rod", "Fishing + Lure", "Fishing + Chum Bucket", "Fishing + Lure + Chum Bucket", "Fossil"}
     if not required_categories.issubset(set(category_ids)):
         errors.append("Pokédex encounter categories are missing required semantic filters.")
 
@@ -227,10 +231,13 @@ def main() -> int:
     for table_id, table in encounter_tables.items():
         encounter_type = str(table.get("encounterType", ""))
         method = str(table.get("method", ""))
-        if encounter_type in {"Old Rod", "Good Rod", "Super Rod"} and method != encounter_type:
+        fishing_modifiers = {"Fishing + Lure", "Fishing + Chum Bucket", "Fishing + Lure + Chum Bucket"}
+        if encounter_type in {"Old Rod", "Good Rod", "Super Rod"} and method not in ({encounter_type} | fishing_modifiers):
             errors.append(f"Rod separation failed for table {table_id}: {encounter_type} became {method}.")
-        if encounter_type == "Fishing" and method != "Fishing":
+        if encounter_type == "Fishing" and method not in ({"Fishing"} | fishing_modifiers):
             errors.append(f"Unspecified Fishing table {table_id} has unexpected method {method}.")
+        if encounter_type == "Fossil" and method != "Fossil":
+            errors.append(f"Fossil table {table_id} has unexpected method {method}.")
         if table.get("region") not in VALID_REGIONS:
             errors.append(f"Encounter table {table_id} has invalid region {table.get('region')!r}.")
         if table.get("encounterType") not in VALID_ENCOUNTER_TYPES:
@@ -813,11 +820,37 @@ def main() -> int:
         "5× Horde": 1200, "3× Horde": 720, "Lure Singles": 280,
         "Lure Safari": 300, "Singles": 220, "Surfing": 220, "Safari": 300,
         "Old Rod": 270, "Good Rod": 270, "Super Rod": 270,
+        "Fishing + Lure": 340, "Fishing + Chum Bucket": 460, "Fishing + Lure + Chum Bucket": 470, "Fossil": 530,
         "Rock Smash": 120, "Headbutt": 120, "Honey Tree": 250,
     }
     for method, expected in expected_defaults.items():
         if method_defaults.get(method) != expected:
             errors.append(f"Unexpected default pace for {method}: {method_defaults.get(method)} != {expected}")
+    # v0.28 fishing modifiers, fossil revival rows and Altering Cave community data.
+    route_method_counts = Counter(str(row.get("method", "")) for row in route_index)
+    base_fishing_tables = sum(route_method_counts.get(method, 0) for method in ("Old Rod", "Good Rod", "Super Rod", "Fishing"))
+    for modifier in ("Fishing + Lure", "Fishing + Chum Bucket", "Fishing + Lure + Chum Bucket"):
+        if route_method_counts.get(modifier, 0) != base_fishing_tables:
+            errors.append(f"{modifier} table count {route_method_counts.get(modifier, 0)} != baseline fishing table count {base_fishing_tables}.")
+    fossil_routes = [row for row in route_index if row.get("method") == "Fossil"]
+    if len(fossil_routes) != 9:
+        errors.append(f"Expected 9 directly revivable Fossil tables, found {len(fossil_routes)}.")
+    for row in fossil_routes:
+        table = encounter_tables.get(str(row.get("tableId")), {})
+        components = table.get("components", [])
+        if len(components) != 1 or abs(float(components[0].get("share", 0)) - 1.0) > 0.000001:
+            errors.append(f"Fossil table {row.get('tableId')} must contain exactly one 100% revival species.")
+    current_cave = altering_cave.get("current", {})
+    if current_cave.get("type") != "Dark" or int(current_cave.get("rotation", 0)) != 3:
+        errors.append(f"Altering Cave current-pool inference changed unexpectedly: {current_cave!r}")
+    dark3 = altering_cave.get("types", {}).get("Dark", {}).get("rotations", {}).get("3", {})
+    if [row.get("name") for row in dark3.get("singles", [])] != ["Tyranitar", "Solrock", "Gothorita", "Munna", "Krookodile", "Umbreon", "Pawniard"]:
+        errors.append("Altering Cave Dark Rotation 3 singles do not match the supplied current summary.")
+    if [row.get("name") for row in dark3.get("hordes", [])] != ["Nidorina", "Scrafty"]:
+        errors.append("Altering Cave Dark Rotation 3 hordes do not match the supplied current summary.")
+    if altering_cave.get("limitations", {}).get("rankingEnabled") is not False:
+        errors.append("Altering Cave must remain excluded from encounter-rate rankings until encounter percentages are sourced.")
+
     route_by_table = {str(row.get("tableId")): row for row in route_index}
     for table_id, table in encounter_tables.items():
         expected_slow = bool(
@@ -858,6 +891,9 @@ def main() -> int:
     print("- Natural 5% horde blocks are included in Singles and Lure Singles, then extracted separately for Sweet Scent")
     print("- Route 32 Lure table = 95% scaled base outcomes + 5% lure-exclusive outcome; 1.095 Pokémon shown per roll")
     print("- Default horde speeds = 1,200 / 720; slowdown-adjusted horde speeds = 1,100 / 660 encounters per hour")
+    print(f"- Fishing modifiers duplicate all {base_fishing_tables:,} rod tables without changing their species pools; defaults = 340 / 460 / 470 per hour")
+    print("- 9 directly revivable fossil species use deterministic 100% Fossil tables at 530 revivals/hour")
+    print("- Altering Cave community planner validated: Dark Rotation 3 inferred as the current supplied pool; exact rates intentionally unranked")
     print(f"- Confidence totals: High {confidence_counts['High']:,}, Medium {confidence_counts['Medium']:,}, Low {confidence_counts['Low']:,}")
     if warnings:
         print("WARNINGS")
