@@ -1561,7 +1561,7 @@ def build(dump_zip: Path, root: Path) -> dict[str, Any]:
         "trainingHordes": len(training_hordes),
         "maximumEvHordes": len(maximum_ev_hordes),
         "evTrainingCategories": len(max_ev_by_category),
-        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.28",
+        "itemSprites": item_sprite_count, "source": "dump.zip", "version": "0.29",
     }
     safe_json(data_dir / "build-info.json", summary)
     return summary

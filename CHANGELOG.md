@@ -1,11 +1,20 @@
 # Changelog
 
+## v0.29 · Altering Cave layout and RNG experiment
+
+- Moved the normal Region → Route → Method → Season → Time controls above the Altering Cave community panel.
+- Removed static active/current Altering Cave wording because the cave can change every in-game day.
+- Reframed saved rotation groups as observed community sets rather than a live rotation feed.
+- Added an experimental Altering Cave roll simulator inferred from the supplied pool structure: 5 common + 2 type-pool singles, and 1 common + 1 type-pool horde.
+- The simulator keeps type selection manual and explicitly does not claim to predict the next daily type or rotation.
+- Added validation for the inferred recipe and its current evidence (27 of 37 populated observed sets exactly match the current source-pool lists).
+
 ## v0.28 · Fishing modifiers, Fossils and Altering Cave
 
 - Added Fishing + Lure, Fishing + Chum Bucket and Fishing + both as ranked hunt methods with 340 / 460 / 470 encounters per hour.
 - Kept Old/Good/Super Rod encounter pools intact while applying the modifier speed to the same exact rod table.
 - Added deterministic Fossil revival hunts at 530 revivals/hour for all 9 directly revivable fossil species.
-- Added an Altering Cave rotation planner from the supplied Team Méw community data, with Dark Rotation 3 inferred as the current supplied pool.
+- Added an Altering Cave rotation planner from the supplied Team Méw community data; the supplied snapshot included an observed Dark Rotation 3 set.
 - Kept Altering Cave out of target encounters/hour rankings until exact encounter percentages are available.
 
 # PaxDex v0.27

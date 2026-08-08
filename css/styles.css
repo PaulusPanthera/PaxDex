@@ -1861,10 +1861,18 @@ html[data-theme="dark"] .detail-quick-search input { color:#eef6f0; }
 }
 
 /* PaxDex v0.28: Altering Cave community rotation planner */
-.altering-cave-panel{margin:0 0 24px;padding:18px;background:var(--paper);border:4px solid var(--ink);box-shadow:5px 5px 0 var(--shadow)}
+.altering-cave-panel{margin:20px 0 24px;padding:18px;background:var(--paper);border:4px solid var(--ink);box-shadow:5px 5px 0 var(--shadow)}
 .altering-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:14px}.altering-head h2{margin:4px 0 5px;font-size:1.8rem}.altering-head p{margin:0;max-width:760px;color:var(--muted);line-height:1.45}.altering-current{flex:0 0 auto;padding:7px 10px;color:#fff;background:var(--green);border:2px solid var(--ink);font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
 .altering-controls{display:grid;grid-template-columns:repeat(2,minmax(180px,300px));gap:10px;margin:0 0 14px}.altering-controls .field>span{display:block;margin-bottom:4px;color:var(--muted);font-size:.7rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.altering-controls select{width:100%}
 .altering-pools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.altering-pools article{padding:12px;background:var(--paper-2);border:2px solid #8a948d}.altering-pool-title{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:9px}.altering-pool-title small{color:var(--muted)}
 .altering-species-strip{display:flex;flex-wrap:wrap;gap:7px}.altering-species{width:76px;min-height:72px;display:grid;grid-template-rows:42px auto;place-items:center;padding:5px;color:var(--ink);text-decoration:none;background:var(--paper);border:2px solid #8a948d;text-align:center}.altering-species:hover{border-color:var(--green);transform:translateY(-1px)}.altering-species img{width:42px;height:42px;object-fit:contain;image-rendering:pixelated}.altering-species span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.67rem;font-weight:900}.altering-note,.altering-source{margin:10px 0 0;color:var(--muted);font-size:.77rem;line-height:1.45}.altering-source{padding-top:10px;border-top:2px dashed rgba(32,51,42,.25)}.altering-empty{color:var(--muted);font-size:.8rem}
 html[data-theme="dark"] .altering-cave-panel{background:#1b2b24}html[data-theme="dark"] .altering-pools article{background:#22342b}html[data-theme="dark"] .altering-species{color:#eef6f0;background:#1b2b24;border-color:#65756c}html[data-theme="dark"] .altering-source{border-color:rgba(220,235,225,.22)}
 @media(max-width:760px){.altering-head{display:grid}.altering-current{justify-self:start}.altering-controls,.altering-pools{grid-template-columns:1fr}.altering-species-strip{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}.altering-species{min-width:76px}}
+
+
+/* PaxDex v0.29: Altering Cave daily-rotation clarification and RNG experiment */
+.altering-rng{margin-top:14px;padding:14px;background:rgba(62,132,101,.08);border:2px dashed var(--green)}
+.altering-rng-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.altering-rng-head h3{margin:4px 0 5px;font-size:1.15rem}.altering-rng-head p{max-width:850px;margin:0;color:var(--muted);font-size:.8rem;line-height:1.5}.altering-rng-head .pixel-btn{flex:0 0 auto}
+.altering-sim-pools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:13px}.altering-sim-pools article{padding:12px;background:var(--paper-2);border:2px solid var(--green)}.altering-rng-empty{margin:12px 0 0;color:var(--muted);font-size:.78rem}
+html[data-theme="dark"] .altering-rng{background:rgba(62,132,101,.12)}html[data-theme="dark"] .altering-sim-pools article{background:#22342b}
+@media(max-width:760px){.altering-rng-head{display:grid}.altering-rng-head .pixel-btn{justify-self:start}.altering-sim-pools{grid-template-columns:1fr}}

@@ -840,14 +840,22 @@ def main() -> int:
         components = table.get("components", [])
         if len(components) != 1 or abs(float(components[0].get("share", 0)) - 1.0) > 0.000001:
             errors.append(f"Fossil table {row.get('tableId')} must contain exactly one 100% revival species.")
-    current_cave = altering_cave.get("current", {})
-    if current_cave.get("type") != "Dark" or int(current_cave.get("rotation", 0)) != 3:
-        errors.append(f"Altering Cave current-pool inference changed unexpectedly: {current_cave!r}")
+    if "current" in altering_cave:
+        errors.append("Altering Cave must not expose a static current/active rotation; the cave changes every in-game day.")
     dark3 = altering_cave.get("types", {}).get("Dark", {}).get("rotations", {}).get("3", {})
     if [row.get("name") for row in dark3.get("singles", [])] != ["Tyranitar", "Solrock", "Gothorita", "Munna", "Krookodile", "Umbreon", "Pawniard"]:
-        errors.append("Altering Cave Dark Rotation 3 singles do not match the supplied current summary.")
+        errors.append("Altering Cave Dark Rotation 3 observed singles changed unexpectedly.")
     if [row.get("name") for row in dark3.get("hordes", [])] != ["Nidorina", "Scrafty"]:
-        errors.append("Altering Cave Dark Rotation 3 hordes do not match the supplied current summary.")
+        errors.append("Altering Cave Dark Rotation 3 observed hordes changed unexpectedly.")
+    rng = altering_cave.get("rngModel", {})
+    recipe = rng.get("recipe", {})
+    if recipe.get("commonSingles") != 5 or recipe.get("typeSingles") != 2 or recipe.get("commonHordes") != 1 or recipe.get("typeHordes") != 1:
+        errors.append(f"Altering Cave RNG recipe changed unexpectedly: {recipe!r}")
+    evidence = rng.get("evidence", {})
+    if evidence.get("observedRotations") != 37 or evidence.get("exactMatchesToCurrentPoolLists") != 27:
+        errors.append(f"Altering Cave RNG evidence changed unexpectedly: {evidence!r}")
+    if len(rng.get("commonSingles", [])) < 100 or len(rng.get("commonHordes", [])) != 30:
+        errors.append("Altering Cave RNG common-pool data is missing or unexpectedly small.")
     if altering_cave.get("limitations", {}).get("rankingEnabled") is not False:
         errors.append("Altering Cave must remain excluded from encounter-rate rankings until encounter percentages are sourced.")
 
@@ -893,7 +901,7 @@ def main() -> int:
     print("- Default horde speeds = 1,200 / 720; slowdown-adjusted horde speeds = 1,100 / 660 encounters per hour")
     print(f"- Fishing modifiers duplicate all {base_fishing_tables:,} rod tables without changing their species pools; defaults = 340 / 460 / 470 per hour")
     print("- 9 directly revivable fossil species use deterministic 100% Fossil tables at 530 revivals/hour")
-    print("- Altering Cave community planner validated: Dark Rotation 3 inferred as the current supplied pool; exact rates intentionally unranked")
+    print("- Altering Cave catalogue/RNG model validated: no static current rotation; experimental 5+2 / 1+1 recipe retained; exact rates intentionally unranked")
     print(f"- Confidence totals: High {confidence_counts['High']:,}, Medium {confidence_counts['Medium']:,}, Low {confidence_counts['Low']:,}")
     if warnings:
         print("WARNINGS")

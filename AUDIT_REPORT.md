@@ -1,71 +1,55 @@
-# PaxDex v0.28 Audit Report
+# PaxDex v0.29 Audit Report
 
 ## Result
 
-PASS. v0.28 rebuilds from the 2026-08-06 dump and passes generated-data validation, JavaScript syntax and Python compilation.
+**PASS.** v0.29 keeps the v0.28 encounter/fishing/fossil dataset intact and changes the Altering Cave presentation/model only.
 
-## Generated data
+## Requested UI changes
 
-- 649 Pokémon
-- 80,796 hunt options
-- 18,075 encounter tables
-- 18,075 Route Searcher rows
-- 2,145 ranked 5× training rows
-- 395 maximum-yield EV rows
+- Route Searcher cascade now renders before the Altering Cave community panel: **PASS**
+- No Altering Cave set is labelled `ACTIVE`, `current`, or `Current sheet pool`: **PASS**
+- Observed source sets are labelled as observed rotations rather than a live feed: **PASS**
+- Team Méw source credit retained: **PASS**
 
-## Fishing modifiers
+## Altering Cave RNG inference
 
-The original 1,437 fishing encounter tables remain separated by rod type:
+The supplied `Pools.csv` and `Rotation Groups.csv` support a useful **experimental composition model**, but not a next-day predictor.
 
-- Old Rod: 297 tables
-- Good Rod: 496 tables
-- Super Rod: 644 tables
+Across the 37 populated observed rotation sets:
 
-Each original table receives three additional hunt-mode views without altering species shares or the rod label:
+- 27 / 37 exactly match the current source-pool recipe
+- Singles: **5 species from the common-single pool + 2 species from the selected type's Rare/Lure pool**
+- Hordes: **1 species from the common-horde pool + 1 species from the selected type's horde pool**
+- Dark additionally lists **Zorua at 1% in all Dark hordes**; the simulator treats that as an extra slot rather than one of the two main horde species.
 
-- Fishing + Lure: 1,437 tables · 340/hr
-- Fishing + Chum Bucket: 1,437 tables · 460/hr
-- Fishing + Lure + Chum Bucket: 1,437 tables · 470/hr
+The ten non-matching historical/observed sets contain species absent from the current `Pools.csv` lists. This means the source appears to have evolved over time or contains incomplete/stale pool membership, so the model is deliberately labelled experimental.
 
-The current dump contains no rod-specific Lure-only species entries, so these are modeled as encounter-speed modifiers over the same rod pools rather than new species compositions.
+### Simulator safeguards
 
-## Fossils
+- The player manually chooses the type pool; PaxDex does **not** assume how the daily type is selected.
+- The simulator samples without duplicate species in a generated singles/horde set.
+- Duplicate spreadsheet rows are not interpreted as proven probability weights.
+- The generated roll is labelled a **possible** pool, not tomorrow's or the current pool.
+- Exact encounter percentages remain unknown and Altering Cave stays excluded from encounters/hour rankings.
+- All 14 type pools with observed rotation data have enough current pool data to generate the inferred 5+2 / 1+1 composition.
 
-Nine directly revivable base species receive deterministic 100% Fossil hunt tables at 530 revivals/hour:
+## Existing dataset regression
 
-Omanyte, Kabuto, Aerodactyl, Lileep, Anorith, Cranidos, Shieldon, Tirtouga and Archen.
+- 649 Pokémon: **PASS**
+- 80,796 hunt options: **PASS**
+- 18,075 encounter tables / Route Searcher rows: **PASS**
+- 2,145 5× training rows: **PASS**
+- 395 maximum-yield EV rows: **PASS**
+- Fishing modifiers and 9 deterministic fossil tables: **PASS**
+- Safari and shiny-safety validation: **PASS**
 
-Evolved members remain searchable under the broader Pokédex Fossil family category, but do not incorrectly receive direct revival tables.
+## Static checks
 
-## Altering Cave
+- JavaScript syntax: **PASS**
+- Python compilation: **PASS**
+- Full generated-data validator: **PASS**
+- Altering Cave RNG recipe/evidence validation: **PASS**
 
-The supplied Rotation Groups sheet gives a strong current-state inference:
+## Interpretation
 
-- Active type: Dark
-- Current rotation: 3
-- Current singles: Tyranitar, Solrock, Gothorita, Munna, Krookodile, Umbreon, Pawniard
-- Current hordes: Nidorina, Scrafty
-- Zorua: listed at 1% in all Dark hordes
-
-The left-side Current summary exactly matches the Dark Rotation 3 block, which is why the planner defaults to Dark · Rotation 3.
-
-The parsed source contains 37 populated rotation groups across 14 types. Fighting, Ghost and Ice currently have no populated rotation data in the supplied export.
-
-The sheets describe pool membership but not exact encounter percentages. PaxDex therefore displays Altering Cave as an availability/rotation planner only and does not fabricate encounters/hour rankings.
-
-Source credit retained as requested by the sheet: Team Méw · @rsslunar · @hekation · @kithri · @lorddusk.
-
-## Checks
-
-- `python scripts/build_data.py dump.zip .`: PASS
-- `python scripts/validate_data.py`: PASS
-- `node --check js/app.js`: PASS
-- Python compilation: PASS
-- 1,437/1,437 fishing tables reproduced for each modifier: PASS
-- 9 deterministic Fossil tables: PASS
-- Altering Cave Dark Rotation 3 source match: PASS
-- Altering Cave ranking exclusion until rates are sourced: PASS
-
-## Reproducibility
-
-A second clean rebuild with the same 2026-08-06 dump was compared against the release output: **4,029 generated data/sprite files, 0 differences**. The static community `altering-cave.json` file is preserved across dump rebuilds.
+The data is strong enough for a **daily-roll simulator** and for cataloguing observed rotations. It is **not yet strong enough to infer a PRNG seed, deterministic sequence, rotation order, daily type probability, or exact encounter percentages**. Those would require timestamped observations over many consecutive in-game days.
